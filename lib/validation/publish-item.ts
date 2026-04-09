@@ -13,7 +13,7 @@ export const publishItemSchema = z.object({
   title: z.string().min(3, "Title must be at least 3 characters"),
   description: z.string().min(15, "Description must be at least 15 characters"),
   price: z.coerce.number().positive("Price must be greater than 0"),
-  category: z.enum(["Textbooks", "Electronics", "Skill Swap"]),
+  category: z.enum(["Textbooks", "Tech", "Dorm", "Skill Swap"]),
   meetupLocation: z.enum(campusLocations)
 });
 

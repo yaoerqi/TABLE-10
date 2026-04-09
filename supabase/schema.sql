@@ -12,7 +12,7 @@ create table if not exists public.users (
   dorm_area text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint users_edu_email_format_check check (edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$')
+  constraint users_edu_email_format_check check (edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$')
 );
 
 -- 2) Items table
@@ -81,7 +81,7 @@ alter table public.wishlist enable row level security;
 
 -- Helper predicate: "authenticated student profile exists"
 -- We inline this expression in policies to avoid SECURITY DEFINER functions:
--- exists (select 1 from public.users u where u.id = auth.uid() and u.edu_email ~* '...\\.edu$')
+-- exists (select 1 from public.users u where u.id = auth.uid() and u.edu_email ~* '...\\.edu\\.cn$')
 
 -- USERS policies
 drop policy if exists users_select_authenticated_students on public.users;
@@ -94,7 +94,7 @@ using (
     select 1
     from public.users me
     where me.id = auth.uid()
-      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
   )
 );
 
@@ -105,7 +105,7 @@ for insert
 to authenticated
 with check (
   id = auth.uid()
-  and edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+  and edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
 );
 
 drop policy if exists users_update_self_edu_only on public.users;
@@ -116,7 +116,7 @@ to authenticated
 using (id = auth.uid())
 with check (
   id = auth.uid()
-  and edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+  and edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
 );
 
 -- ITEMS policies
@@ -130,9 +130,18 @@ using (
     select 1
     from public.users me
     where me.id = auth.uid()
-      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
   )
 );
+
+-- Allow anonymous browsing (demo) of available items
+-- Needed so the user can enter the homepage without successfully sending OTP email.
+drop policy if exists items_select_public_browse on public.items;
+create policy items_select_public_browse
+on public.items
+for select
+to public
+using (status = 'available');
 
 drop policy if exists items_insert_owner_only on public.items;
 create policy items_insert_owner_only
@@ -145,7 +154,7 @@ with check (
     select 1
     from public.users me
     where me.id = auth.uid()
-      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
   )
 );
 
@@ -175,7 +184,7 @@ using (
     select 1
     from public.users me
     where me.id = auth.uid()
-      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
   )
 );
 
@@ -190,7 +199,7 @@ with check (
     select 1
     from public.users me
     where me.id = auth.uid()
-      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu$'
+      and me.edu_email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.edu\.cn$'
   )
 );
 

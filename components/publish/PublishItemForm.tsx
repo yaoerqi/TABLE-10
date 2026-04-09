@@ -3,21 +3,32 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
-import { AuthPanel } from "@/components/auth/AuthPanel";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
 import {
   campusLocations,
   publishItemSchema,
   type PublishItemInput
 } from "@/lib/validation/publish-item";
+import { LoginScreen } from "@/components/auth/LoginScreen";
+import { ensureStudentProfile } from "@/lib/supabase/studentAuth";
+import { isDemoAuthed } from "@/lib/demo/demoAuth";
+import { Item3DViewer } from "@/components/viewer/Item3DViewer";
 
-const categoryOptions = ["Textbooks", "Electronics", "Skill Swap"] as const;
+const categoryOptions = ["Textbooks", "Tech", "Dorm", "Skill Swap"] as const;
 
 export function PublishItemForm() {
   const [isDragging, setIsDragging] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [createdItemId, setCreatedItemId] = useState<string | null>(null);
+  const [threeDStatus, setThreeDStatus] = useState<
+    "pending" | "processing" | "completed" | "failed" | null
+  >(null);
+  const [modelGlbUrl, setModelGlbUrl] = useState<string | null>(null);
+  const [threeDMessage, setThreeDMessage] = useState<string>("");
+  const [refreshing3d, setRefreshing3d] = useState(false);
 
   const {
     register,
@@ -58,7 +69,23 @@ export function PublishItemForm() {
     setFiles(merged);
   };
 
+  const onSelectVideo = (file: File | null) => {
+    if (!file) {
+      setVideoFile(null);
+      return;
+    }
+    if (!file.type.startsWith("video/")) {
+      setSubmitMessage("请选择视频文件（mp4/mov）。");
+      return;
+    }
+    setVideoFile(file);
+  };
+
   const refreshAuth = async () => {
+    if (isDemoAuthed()) {
+      setAuthUserId("demo-user");
+      return;
+    }
     if (!hasSupabaseEnv) {
       setAuthUserId(null);
       return;
@@ -66,7 +93,12 @@ export function PublishItemForm() {
     const {
       data: { user }
     } = await supabase.auth.getUser();
-    setAuthUserId(user?.id ?? null);
+    if (!user) {
+      setAuthUserId(null);
+      return;
+    }
+    const res = await ensureStudentProfile();
+    setAuthUserId(res.ok ? user.id : null);
   };
 
   useEffect(() => {
@@ -86,13 +118,27 @@ export function PublishItemForm() {
       setSubmitMessage("请至少上传 1 张商品图片。");
       return;
     }
+
+    if (isDemoAuthed()) {
+      setSubmitMessage(`演示模式：已生成发布草稿（${files.length} 张图片未上传）。`);
+      setFiles([]);
+      return;
+    }
+
     setSubmitMessage("");
-    const categoryMap: Record<PublishItemInput["category"], "Books" | "Electronics" | "Skills"> =
-      {
-        Textbooks: "Books",
-        Electronics: "Electronics",
-        "Skill Swap": "Skills"
-      };
+    setThreeDMessage("");
+    setCreatedItemId(null);
+    setThreeDStatus(null);
+    setModelGlbUrl(null);
+    const categoryMap: Record<
+      PublishItemInput["category"],
+      "Books" | "Electronics" | "Skills" | "Dorms"
+    > = {
+      Textbooks: "Books",
+      Tech: "Electronics",
+      Dorm: "Dorms",
+      "Skill Swap": "Skills"
+    };
 
     const uploadedUrls: string[] = [];
     for (const file of files) {
@@ -109,7 +155,9 @@ export function PublishItemForm() {
       uploadedUrls.push(publicData.publicUrl);
     }
 
-    const { error } = await supabase.from("items").insert({
+    const { data: inserted, error } = await supabase
+      .from("items")
+      .insert({
       seller_id: authUserId,
       title: data.title,
       description: data.description,
@@ -117,20 +165,105 @@ export function PublishItemForm() {
       category: categoryMap[data.category],
       meetup_location: data.meetupLocation,
       images_array: uploadedUrls,
-      status: "available"
-    });
+      status: "available",
+      "3d_status": videoFile ? "pending" : "pending"
+    })
+      .select("id")
+      .single();
     if (error) {
       setSubmitMessage(`发布失败：${error.message}`);
       return;
     }
+    const itemId = inserted?.id as string | undefined;
+    if (!itemId) {
+      setSubmitMessage("发布成功，但未获取到 itemId。");
+      setFiles([]);
+      return;
+    }
+
+    setCreatedItemId(itemId);
     setSubmitMessage("发布成功！");
     setFiles([]);
+
+    // If a video was provided, trigger the 3D job.
+    if (videoFile) {
+      setThreeDStatus("processing");
+      setThreeDMessage("已提交 3D 生成任务（processing）。");
+      const {
+        data: { session }
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      if (!accessToken) {
+        setThreeDStatus("failed");
+        setThreeDMessage("无法获取登录 token，无法触发 3D 生成。");
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("itemId", itemId);
+      fd.append("video", videoFile);
+
+      const resp = await fetch("/api/3d/generate", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}` },
+        body: fd
+      });
+
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setThreeDStatus("failed");
+        setThreeDMessage(json?.error ? String(json.error) : "3D 任务创建失败");
+        return;
+      }
+
+      setThreeDStatus("processing");
+      setThreeDMessage(`3D 任务已创建：${json.reconstructionId ?? ""}`.trim());
+    }
+  };
+
+  const refresh3d = async () => {
+    if (!createdItemId) {
+      setThreeDMessage("请先发布（并生成 itemId）后再刷新。");
+      return;
+    }
+    const {
+      data: { session }
+    } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+
+    setRefreshing3d(true);
+    try {
+      const resp = await fetch(`/api/3d/status?itemId=${encodeURIComponent(createdItemId)}`, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
+      });
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        setThreeDMessage(json?.error ? String(json.error) : "刷新失败");
+        return;
+      }
+      const status = (json.status ?? null) as
+        | "pending"
+        | "processing"
+        | "completed"
+        | "failed"
+        | null;
+      setThreeDStatus(status);
+      if (status === "completed" && json.modelGlbUrl) {
+        setModelGlbUrl(String(json.modelGlbUrl));
+        setThreeDMessage("3D 模型已完成，可预览。");
+      } else {
+        setThreeDMessage(`当前状态：${status ?? "unknown"}`);
+      }
+    } finally {
+      setRefreshing3d(false);
+    }
   };
 
   return (
     <main className="mx-auto min-h-screen max-w-2xl px-4 py-8 sm:px-6">
-      <AuthPanel onAuthed={refreshAuth} />
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card sm:p-7">
+      {!authUserId ? <LoginScreen onAuthed={refreshAuth} /> : null}
+      {authUserId ? (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card sm:p-7">
         <h1 className="text-xl font-bold text-slate-900">Publish Item</h1>
         <p className="mt-1 text-sm text-slate-500">
           Create a clean listing so students can find your item quickly.
@@ -248,6 +381,23 @@ export function PublishItemForm() {
             </div>
           ) : null}
 
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-700">
+              3D Video (optional, 10–15s orbit)
+            </span>
+            <input
+              type="file"
+              accept="video/*"
+              onChange={(event) => onSelectVideo(event.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-slate-700"
+            />
+            {videoFile ? (
+              <p className="mt-1 text-xs text-slate-500">已选择视频：{videoFile.name}</p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-500">不上传视频也可正常发布（不生成 3D）。</p>
+            )}
+          </label>
+
           <button
             type="submit"
             disabled={isSubmitting}
@@ -256,8 +406,32 @@ export function PublishItemForm() {
             {isSubmitting ? "Publishing..." : "Publish Item"}
           </button>
           {submitMessage ? <p className="text-sm text-slate-600">{submitMessage}</p> : null}
+
+          {createdItemId ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">3D Pipeline</p>
+              <p className="mt-1 text-xs text-slate-600">itemId: {createdItemId}</p>
+              <p className="mt-1 text-xs text-slate-600">
+                status: {threeDStatus ?? "—"}
+              </p>
+              <button
+                type="button"
+                onClick={refresh3d}
+                disabled={refreshing3d}
+                className="mt-3 h-10 w-full rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-800 disabled:opacity-60"
+              >
+                {refreshing3d ? "Refreshing..." : "刷新 3D 模型状态"}
+              </button>
+              {threeDMessage ? <p className="mt-2 text-xs text-slate-600">{threeDMessage}</p> : null}
+            </div>
+          ) : null}
+
+          {modelGlbUrl ? (
+            <Item3DViewer modelGlbUrl={modelGlbUrl} posterUrl={previewUrls[0]} />
+          ) : null}
         </form>
-      </section>
+        </section>
+      ) : null}
     </main>
   );
 }
