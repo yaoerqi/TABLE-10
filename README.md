@@ -9,9 +9,13 @@ A campus-only second-hand marketplace for university students (similar to Xianyu
 
 ## Features (current)
 
-- Student-only access plan (Edu email required)
-- Homepage: browse items with search + category filter (real Supabase data)
-- Publish Item: create listings and upload item images to Supabase Storage
+- Minimalist Apple-style login screen, homepage, masonry feed, and floating bottom navigation
+- Demo Mode: click-through access for UI/interaction testing without blocking on full auth
+- Homepage: search + pill-style categories + masonry feed
+- Publish Item: form validation + image upload flow (Supabase-ready)
+- Search API: natural-language item lookup via `POST /api/search`
+- Assistant page: virtual shopping assistant UI with text/voice search
+- Desktop pet integration (via old Electron project): desktop pet can call the website search API directly
 - 3D pipeline (MVP): upload a short item video → generate GLB → manual “refresh status” → in-page 3D viewer
 
 
@@ -23,19 +27,31 @@ A campus-only second-hand marketplace for university students (similar to Xianyu
   - Database: PostgreSQL (tables + RLS policies)
   - Storage: item image uploads (`item-images` bucket)
   - 3D (API): Reali3 (video → GLB)
+- Desktop pet / avatar:
+  - Electron
+  - PIXI.js
+  - pixi-live2d-display
 
 ## Folder Structure
 
 ```text
 app/
+  assistant/page.tsx       # Virtual assistant page
+  api/search/route.ts      # Natural-language item search API
   page.tsx                  # Homepage
   publish/page.tsx         # Publish Item page
 components/
   auth/LoginScreen.tsx
+  assistant/AssistantPage.tsx
+  assistant/AssistantPanel.tsx
   home/Homepage.tsx
+  live2d/Live2DDisplay.tsx
+  navigation/BottomNav.tsx
   publish/PublishItemForm.tsx
   viewer/Item3DViewer.tsx
 lib/
+  assistant/search.ts      # Query parsing + item ranking
+  demo/demoAuth.ts         # Demo-mode local auth bypass
   mock/items.ts            # Mock data (fallback / reference)
   supabase/client.ts       # Supabase client
   supabase/studentAuth.ts  # .edu.cn student profile helpers
@@ -52,7 +68,7 @@ docs/
 ## Prerequisites
 
 - Node.js 18+
-- A Supabase project
+- A Supabase project (optional for early UI demo mode)
 - GitHub (optional)
 
 ## Setup
@@ -96,11 +112,22 @@ npm run dev
 
 Open:
 - Homepage: `http://localhost:3000/`
+- Assistant page: `http://localhost:3000/assistant`
 - Publish page: `http://localhost:3000/publish`
+
+## Demo Mode
+
+To keep design and interaction work moving, the app currently supports a lightweight Demo Mode:
+
+- On the login screen, clicking the button can continue the flow even if full auth is not ready yet
+- Homepage can render mock items
+- Publish flow can be tested without fully blocking on production auth
+
+This is intended for iterative UI/UX development. The strict auth/search/data flow can be re-tightened later.
 
 ## Auth Plan (Edu email required)
 
-Current UI uses Supabase Auth and checks the signed-in user's email ends with `.edu.cn`.
+Current auth logic targets `.edu.cn` student emails.
 After login, the app attempts to create/update a profile row in `public.users` and relies on RLS to enforce student-only access.
 
 ## Database Schema
@@ -111,7 +138,64 @@ Tables (from `supabase/schema.sql`):
 - `public.wishlist` (buyer requests)
 
 RLS:
-- Only authenticated users with `.edu` profile rows can read/write.
+- Only authenticated users with `.edu.cn` profile rows can read/write.
+
+## Search API
+
+The project now includes a basic natural-language search endpoint:
+
+- `POST /api/search`
+  - Input:
+    ```json
+    { "query": "I want a used 13-inch laptop" }
+    ```
+  - Output:
+    - parsed need (category / brand / size hints)
+    - ranked item results
+
+Current implementation uses mock items for quick testing. It can later be upgraded to real Supabase `items` queries.
+
+## Virtual Assistant + Desktop Pet
+
+There are now two assistant-related directions in the codebase:
+
+### 1) Website assistant page
+
+- Route: `/assistant`
+- Includes:
+  - text input
+  - browser speech recognition
+  - result cards
+  - optional Live2D model area
+
+### 2) Desktop pet integration
+
+The intended final interaction is:
+- user talks to the desktop pet
+- desktop pet sends the request to the website search API
+- desktop pet returns the matched items in its own bubble / UI
+
+The Electron desktop pet code was adapted from:
+- `D:\ent_coursework\nana\desktop`
+
+Its renderer now targets:
+- `http://localhost:3000/api/search`
+
+So the desktop pet can reuse the marketplace's search capability without forcing users to open the web page.
+
+## Live2D Model Assets
+
+The Live2D component is wired up, but model assets are not automatically copied into this repo.
+
+If you want the model to appear on `/assistant`, copy:
+
+- `D:\ent_coursework\nana\frontend\public\models`
+
+to:
+
+- `E:\学习\ENT\public\models`
+
+Keep the folder structure unchanged.
 
 ## 3D Video → GLB Pipeline (MVP)
 
@@ -158,7 +242,14 @@ See `docs/architecture.md` for the recommended structure and flow.
    - Confirm the bucket name is exactly `item-images`
    - Confirm Storage policies allow authenticated insert and public select (or adjust the frontend to use signed URLs).
 
-3. Do not commit secrets
+3. If `/assistant` page shows no Live2D model
+   - Copy the old `public/models` folder into this project as described above.
+
+4. If desktop pet search fails
+   - Ensure the Next.js app is running at `http://localhost:3000`
+   - Ensure the desktop pet renderer is calling `/api/search`
+
+5. Do not commit secrets
    - `.env.local` should stay local only.
    - Never expose `SUPABASE_SERVICE_ROLE_KEY` in the browser.
 
@@ -176,10 +267,16 @@ MIT
 - Add Publish flow support for optional 3D video upload + job creation
 - Add in-page 3D preview using `<model-viewer />`
 - Redesign Login/Home UI toward minimalist Apple-style layout
+- Add Demo Mode for UI-first iteration without blocking on strict auth
+- Add `POST /api/search` for natural-language item search
+- Add `/assistant` page with text/voice item search
+- Add Live2D display component for assistant integration
+- Connect desktop pet direction to the website search API
 
 #### fix
 - Wrap `useSearchParams()` usage with `Suspense` to unblock `next build`
 - Load `model-viewer` client-side to avoid SSR error (`HTMLElement is not defined`)
+- Use dynamic imports for PIXI / Live2D to avoid `window is not defined` during SSR
 
 #### docs
-- Update `README.md` with 3D pipeline setup, env vars, and API route usage
+- Update `README.md` with current UI, assistant, desktop pet, and Live2D usage notes
