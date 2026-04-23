@@ -22,7 +22,9 @@ create table if not exists public.items (
   title text not null check (char_length(title) between 3 and 120),
   description text not null check (char_length(description) between 10 and 3000),
   price numeric(10,2) not null check (price >= 0),
-  category text not null check (category in ('Books', 'Electronics', 'Skills', 'Dorms')),
+  category text not null check (category in (
+    '游戏','数码','玩车','手机','户外','传达','母婴','宠物','植物','技能服务','企业用品','家电','小配饰','二次元','图书','影视','美妆','家具','温婉','时尚首饰','租房','食品','农用物品'
+  )),
   images_array text[] not null default '{}',
   meetup_location text not null,
   status text not null default 'available' check (status in ('available', 'reserved', 'sold', 'inactive')),
@@ -44,6 +46,18 @@ create table if not exists public.wishlist (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- 4) Favorites / Following (user follows an item)
+create table if not exists public.favorites (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users (id) on delete cascade,
+  item_id uuid not null references public.items (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, item_id)
+);
+
+create index if not exists favorites_user_id_idx on public.favorites (user_id);
+create index if not exists favorites_item_id_idx on public.favorites (item_id);
 
 create index if not exists wishlist_buyer_id_idx on public.wishlist (buyer_id);
 create index if not exists wishlist_created_at_idx on public.wishlist (created_at desc);
@@ -78,6 +92,7 @@ for each row execute function public.set_updated_at();
 alter table public.users enable row level security;
 alter table public.items enable row level security;
 alter table public.wishlist enable row level security;
+alter table public.favorites enable row level security;
 
 -- Helper predicate: "authenticated student profile exists"
 -- We inline this expression in policies to avoid SECURITY DEFINER functions:
@@ -217,3 +232,25 @@ on public.wishlist
 for delete
 to authenticated
 using (buyer_id = auth.uid());
+
+-- FAVORITES policies
+drop policy if exists favorites_select_owner_only on public.favorites;
+create policy favorites_select_owner_only
+on public.favorites
+for select
+to authenticated
+using (user_id = auth.uid());
+
+drop policy if exists favorites_insert_owner_only on public.favorites;
+create policy favorites_insert_owner_only
+on public.favorites
+for insert
+to authenticated
+with check (user_id = auth.uid());
+
+drop policy if exists favorites_delete_owner_only on public.favorites;
+create policy favorites_delete_owner_only
+on public.favorites
+for delete
+to authenticated
+using (user_id = auth.uid());

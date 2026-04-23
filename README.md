@@ -1,11 +1,28 @@
-# Campus Second-hand Marketplace (Next.js App Router + Supabase)
+# Campus Second-hand Marketplace
+
+Campus-only second-hand marketplace for university students (similar to Xianyu/Craigslist).
+
+- **Tech**: Next.js (App Router) + React + TypeScript + Tailwind CSS
+- **Backend**: Supabase (Auth + Postgres + Storage + RLS)
 
 ## Overview
 
-A campus-only second-hand marketplace for university students (similar to Xianyu/Craigslist), built with:
-- Next.js (App Router) + React + TypeScript
-- Tailwind CSS (mobile-first)
-- Supabase Auth + PostgreSQL + Storage + RLS
+This repo contains a mobile-first web app for browsing and publishing campus marketplace listings, plus an assistant/search direction that can also be called by an external desktop pet app.
+
+> Tip: You can run the UI in **Demo Mode** (mock data / lightweight auth bypass) before wiring up the full Supabase flow.
+
+## Screenshots
+
+> TODO: add screenshots / GIFs
+
+## Quick start
+
+```bash
+npm install
+npm run dev
+```
+
+Open `http://localhost:3000`.
 
 ## Features (current)
 
@@ -79,30 +96,35 @@ docs/
 npm install
 ```
 
-### 2) Create Supabase tables + RLS
+### 2) Environment variables
+
+Create `.env.local` (do NOT commit it).
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
+```
+
+Optional (server-only):
+
+```env
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+REALI3_API_KEY=your-reali3-api-key
+```
+
+### 3) Create Supabase tables + RLS
 
 In Supabase → `SQL Editor`, run:
 
 - `supabase/schema.sql`
 
-### 3) Create Storage bucket for images
+### 4) Create Storage bucket for images
 
 In Supabase → `Storage`:
 - Create a bucket: `item-images`
 - Recommended: bucket is `Public` (current frontend uses `getPublicUrl`)
 
 If needed, apply Storage policies (see `docs/supabase-connect.md`).
-
-### 4) Add environment variables
-
-Create a file: `.env.local` (do NOT commit it).
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
-REALI3_API_KEY=your-reali3-api-key
-```
 
 ### 5) Run the dev server
 
@@ -175,9 +197,6 @@ The intended final interaction is:
 - desktop pet sends the request to the website search API
 - desktop pet returns the matched items in its own bubble / UI
 
-The Electron desktop pet code was adapted from:
-- `D:\ent_coursework\nana\desktop`
-
 Its renderer now targets:
 - `http://localhost:3000/api/search`
 
@@ -187,15 +206,7 @@ So the desktop pet can reuse the marketplace's search capability without forcing
 
 The Live2D component is wired up, but model assets are not automatically copied into this repo.
 
-If you want the model to appear on `/assistant`, copy:
-
-- `D:\ent_coursework\nana\frontend\public\models`
-
-to:
-
-- `E:\学习\ENT\public\models`
-
-Keep the folder structure unchanged.
+If you want the model to appear on `/assistant`, copy your Live2D `public/models` folder into this repo at `public/models` and keep the folder structure unchanged.
 
 ## 3D Video → GLB Pipeline (MVP)
 
@@ -252,6 +263,11 @@ See `docs/architecture.md` for the recommended structure and flow.
 5. Do not commit secrets
    - `.env.local` should stay local only.
    - Never expose `SUPABASE_SERVICE_ROLE_KEY` in the browser.
+
+## Deployment (notes)
+
+- **Vercel**: set env vars in Project Settings → Environment Variables, then deploy.
+- **Supabase**: ensure RLS policies and Storage policies match your deployment domain and auth requirements.
 
 ## License
 

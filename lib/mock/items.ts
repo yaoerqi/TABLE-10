@@ -1,4 +1,4 @@
-export type ItemCategory = "Textbooks" | "Electronics" | "Skill Swap";
+import type { Category } from "@/lib/categories";
 
 export interface MockItem {
   id: string;
@@ -7,7 +7,7 @@ export interface MockItem {
   imageUrl: string;
   sellerAvatar: string;
   meetupLocation: string;
-  category: ItemCategory;
+  category: Category;
 }
 
 export const mockItems: MockItem[] = [
@@ -19,7 +19,7 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1521587760476-6c12a4b040da?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=12",
     meetupLocation: "Dorm Building 5",
-    category: "Textbooks"
+    category: "图书"
   },
   {
     id: "2",
@@ -29,7 +29,7 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=22",
     meetupLocation: "Library Gate",
-    category: "Electronics"
+    category: "数码"
   },
   {
     id: "3",
@@ -39,7 +39,7 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1545239351-1141bd82e8a6?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=9",
     meetupLocation: "Innovation Hub",
-    category: "Skill Swap"
+    category: "传达"
   },
   {
     id: "4",
@@ -49,7 +49,7 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1541140532154-b024d705b90a?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=16",
     meetupLocation: "Dorm Building 2",
-    category: "Electronics"
+    category: "数码"
   },
   {
     id: "5",
@@ -59,7 +59,7 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=27",
     meetupLocation: "Teaching Building A",
-    category: "Textbooks"
+    category: "图书"
   },
   {
     id: "6",
@@ -69,6 +69,6 @@ export const mockItems: MockItem[] = [
       "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=800&q=80",
     sellerAvatar: "https://i.pravatar.cc/100?img=35",
     meetupLocation: "Campus Lake",
-    category: "Skill Swap"
+    category: "技能服务"
   }
 ];

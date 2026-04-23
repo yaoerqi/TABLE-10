@@ -13,8 +13,9 @@ import { LoginScreen } from "@/components/auth/LoginScreen";
 import { ensureStudentProfile } from "@/lib/supabase/studentAuth";
 import { isDemoAuthed } from "@/lib/demo/demoAuth";
 import { Item3DViewer } from "@/components/viewer/Item3DViewer";
+import { ALL_CATEGORIES } from "@/lib/categories";
 
-const categoryOptions = ["Textbooks", "Tech", "Dorm", "Skill Swap"] as const;
+const categoryOptions = ALL_CATEGORIES;
 
 export function PublishItemForm() {
   const [isDragging, setIsDragging] = useState(false);
@@ -40,7 +41,7 @@ export function PublishItemForm() {
       title: "",
       description: "",
       price: 0,
-      category: "Textbooks",
+      category: ALL_CATEGORIES[0],
       meetupLocation: campusLocations[0]
     }
   });
@@ -130,15 +131,7 @@ export function PublishItemForm() {
     setCreatedItemId(null);
     setThreeDStatus(null);
     setModelGlbUrl(null);
-    const categoryMap: Record<
-      PublishItemInput["category"],
-      "Books" | "Electronics" | "Skills" | "Dorms"
-    > = {
-      Textbooks: "Books",
-      Tech: "Electronics",
-      Dorm: "Dorms",
-      "Skill Swap": "Skills"
-    };
+    // Category is stored as-is (Chinese categories) for richer filtering.
 
     const uploadedUrls: string[] = [];
     for (const file of files) {
@@ -162,7 +155,7 @@ export function PublishItemForm() {
       title: data.title,
       description: data.description,
       price: data.price,
-      category: categoryMap[data.category],
+      category: data.category,
       meetup_location: data.meetupLocation,
       images_array: uploadedUrls,
       status: "available",

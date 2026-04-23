@@ -1,3 +1,5 @@
+import type { Category } from "@/lib/categories";
+
 export interface DbUser {
   id: string;
   edu_email: string;
@@ -12,7 +14,7 @@ export interface DbItem {
   title: string;
   description: string;
   price: number;
-  category: "Books" | "Electronics" | "Skills" | "Dorms";
+  category: Category;
   images_array: string[];
   meetup_location: string;
   status: "available" | "reserved" | "sold" | "inactive";

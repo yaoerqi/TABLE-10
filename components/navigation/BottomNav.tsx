@@ -2,37 +2,41 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Building2, BookOpen, Cpu, HandHeart, Home, Plus } from "lucide-react";
+import { Flame, Grid2X2, Heart, Home, Plus } from "lucide-react";
 
 const tabs = [
-  { key: "All", label: "All", href: "/?cat=All", Icon: Home },
-  { key: "Textbooks", label: "Textbooks", href: "/?cat=Textbooks", Icon: BookOpen },
-  { key: "Tech", label: "Tech", href: "/?cat=Tech", Icon: Cpu },
-  { key: "Dorm", label: "Dorm", href: "/?cat=Dorm", Icon: Building2 },
-  { key: "Skill Swap", label: "Skill Swap", href: "/?cat=Skill Swap", Icon: HandHeart }
+  { key: "recommend", label: "推荐", href: "/?tab=recommend", Icon: Home },
+  { key: "hot", label: "热点", href: "/?tab=hot", Icon: Flame },
+  { key: "following", label: "关注", href: "/following", Icon: Heart },
+  { key: "categories", label: "分类", href: "/?tab=recommend&openCats=1", Icon: Grid2X2 }
 ] as const;
 
 export function BottomNav() {
   const pathname = usePathname();
   const sp = useSearchParams();
-  const cat = sp.get("cat") ?? "All";
+  const activeTab = sp.get("tab") ?? "recommend";
+  const openCats = sp.get("openCats") ?? "0";
 
   return (
     <nav className="fixed bottom-6 left-4 right-4 z-40">
       <div className="mx-auto relative grid grid-cols-5 items-center rounded-3xl border border-white/20 bg-white/70 backdrop-blur-lg shadow-xl">
-        {tabs.map((tab) => {
-          const isActive = pathname === "/" && tab.key === cat;
-          const Icon = tab.Icon;
+        {tabs.map((t) => {
+          const isActive =
+            (t.key === "following" && pathname === "/following") ||
+            (pathname === "/" &&
+              t.key !== "following" &&
+              (t.key === "categories" ? openCats === "1" : t.key === activeTab));
+          const Icon = t.Icon;
 
           return (
             <Link
-              key={tab.key}
-              href={tab.href}
+              key={t.key}
+              href={t.href}
               className={[
                 "flex h-12 w-full items-center justify-center transition",
                 isActive ? "text-black" : "text-gray-500"
               ].join(" ")}
-              aria-label={tab.label}
+              aria-label={t.label}
             >
               <Icon className="h-5 w-5" />
             </Link>

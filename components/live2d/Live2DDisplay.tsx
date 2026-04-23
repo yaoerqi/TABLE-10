@@ -1,6 +1,6 @@
 "use client";
 
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef } from "react";
 
 export type Live2DDisplayHandle = {
   switchModel: (modelPath: string) => Promise<void>;
@@ -8,7 +8,27 @@ export type Live2DDisplayHandle = {
   getModel: () => any | null;
 };
 
-export const Live2DDisplay = forwardRef<Live2DDisplayHandle, { modelPath?: string }>(
+async function ensureCubismCoreReady(timeoutMs = 8000) {
+  if (typeof window === "undefined") return;
+  const w = window as any;
+  if (w.Live2DCubismCore) return;
+
+  // Wait for the core script injected by next/script (beforeInteractive).
+  const start = Date.now();
+  while (!w.Live2DCubismCore && Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  if (!w.Live2DCubismCore) {
+    throw new Error(
+      "Cubism Core not loaded. Make sure live2dcubismcore.min.js is loaded before pixi-live2d-display/cubism4."
+    );
+  }
+}
+
+export const Live2DDisplay = forwardRef<
+  Live2DDisplayHandle,
+  { modelPath?: string; onReady?: () => void; onError?: (error: unknown) => void }
+>(
   function Live2DDisplayInner(props, ref) {
     const pixiContainerRef = useRef<HTMLDivElement | null>(null);
     const appRef = useRef<any | null>(null);
@@ -16,6 +36,13 @@ export const Live2DDisplay = forwardRef<Live2DDisplayHandle, { modelPath?: strin
     const currentModelPathRef = useRef<string | null>(null);
     const pixiRef = useRef<any | null>(null);
     const live2dRef = useRef<any | null>(null);
+    const onReadyRef = useRef<typeof props.onReady>(props.onReady);
+    const onErrorRef = useRef<typeof props.onError>(props.onError);
+
+    useEffect(() => {
+      onReadyRef.current = props.onReady;
+      onErrorRef.current = props.onError;
+    }, [props.onReady, props.onError]);
 
     useImperativeHandle(ref, () => ({
       getModel: () => modelRef.current,
@@ -65,6 +92,7 @@ export const Live2DDisplay = forwardRef<Live2DDisplayHandle, { modelPath?: strin
 
       (async () => {
         try {
+          await ensureCubismCoreReady();
           const PIXI = await import("pixi.js");
           const live2d = await import("pixi-live2d-display/cubism4");
           if (destroyed) return;
@@ -113,9 +141,11 @@ export const Live2DDisplay = forwardRef<Live2DDisplayHandle, { modelPath?: strin
           model.anchor.set(0.5, 0.5);
 
           appRef.current.stage.addChild(model);
+          onReadyRef.current?.();
         } catch (e) {
           // Model assets might not be present yet; show nothing.
           console.warn("Live2D model load failed:", e);
+          onErrorRef.current?.(e);
         }
       })();
 
