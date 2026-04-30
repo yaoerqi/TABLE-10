@@ -18,6 +18,7 @@ import { ALL_CATEGORIES } from "@/lib/categories";
 const categoryOptions = ALL_CATEGORIES;
 
 export function PublishItemForm() {
+  const [postType, setPostType] = useState<"item" | "wishlist">("item");
   const [isDragging, setIsDragging] = useState(false);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
   const [submitMessage, setSubmitMessage] = useState("");
@@ -30,10 +31,13 @@ export function PublishItemForm() {
   const [modelGlbUrl, setModelGlbUrl] = useState<string | null>(null);
   const [threeDMessage, setThreeDMessage] = useState<string>("");
   const [refreshing3d, setRefreshing3d] = useState(false);
+  const [optimizing, setOptimizing] = useState(false);
 
   const {
     register,
     handleSubmit,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting }
   } = useForm<PublishItemInput>({
     resolver: zodResolver(publishItemSchema),
@@ -106,6 +110,32 @@ export function PublishItemForm() {
     refreshAuth();
   }, []);
 
+  useEffect(() => {
+    setSubmitMessage("");
+    setCreatedItemId(null);
+    setThreeDStatus(null);
+    setThreeDMessage("");
+    setModelGlbUrl(null);
+
+    if (postType === "wishlist") {
+      setFiles([]);
+      setVideoFile(null);
+      const d = getValues("description").trim();
+      if (!d) {
+        const title = getValues("title").trim();
+        const price = getValues("price");
+        const loc = getValues("meetupLocation");
+        const next = [
+          `【求购】${title || "（请补充需求标题）"}`,
+          `预算：￥${Number(price || 0).toFixed(0)}，校内自提优先。`,
+          `地点：${loc}`,
+          "补充说明：成色/型号/附件要求欢迎留言沟通。"
+        ].join("\n");
+        setValue("description", next, { shouldValidate: true, shouldDirty: true });
+      }
+    }
+  }, [postType, getValues, setValue]);
+
   const onSubmit = async (data: PublishItemInput) => {
     if (!hasSupabaseEnv) {
       setSubmitMessage("请先配置 Supabase 环境变量。");
@@ -115,14 +145,18 @@ export function PublishItemForm() {
       setSubmitMessage("请先登录后再发布。");
       return;
     }
-    if (files.length === 0) {
+    if (postType === "item" && files.length === 0) {
       setSubmitMessage("请至少上传 1 张商品图片。");
       return;
     }
 
     if (isDemoAuthed()) {
-      setSubmitMessage(`演示模式：已生成发布草稿（${files.length} 张图片未上传）。`);
-      setFiles([]);
+      setSubmitMessage(
+        postType === "wishlist"
+          ? "演示模式：已生成求购草稿（未写入数据库）。"
+          : `演示模式：已生成发布草稿（${files.length} 张图片未上传）。`
+      );
+      if (postType === "item") setFiles([]);
       return;
     }
 
@@ -132,6 +166,22 @@ export function PublishItemForm() {
     setThreeDStatus(null);
     setModelGlbUrl(null);
     // Category is stored as-is (Chinese categories) for richer filtering.
+
+    if (postType === "wishlist") {
+      const { error } = await supabase.from("wishlist").insert({
+        buyer_id: authUserId,
+        requested_item: data.title,
+        budget: data.price
+      });
+      if (error) {
+        setSubmitMessage(`发布求购失败：${error.message}`);
+        return;
+      }
+      setSubmitMessage("求购发布成功！");
+      setFiles([]);
+      setVideoFile(null);
+      return;
+    }
 
     const uploadedUrls: string[] = [];
     for (const file of files) {
@@ -214,6 +264,50 @@ export function PublishItemForm() {
     }
   };
 
+  const optimizeCopy = async () => {
+    const title = getValues("title").trim();
+    const category = getValues("category");
+    const meetupLocation = getValues("meetupLocation");
+    const price = getValues("price");
+    if (!title) {
+      setSubmitMessage("请先填写标题，再用 AI 优化文案。");
+      return;
+    }
+    setSubmitMessage("");
+    setOptimizing(true);
+    try {
+      const resp = await fetch("/api/search", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: title })
+      });
+      const json = await resp.json().catch(() => ({}));
+      const hint =
+        resp.ok && json?.ok && Array.isArray(json?.results) && json.results.length
+          ? `参考热度：同类热门 ${String(json.results[0]?.title ?? "").slice(0, 40)}`
+          : "";
+
+      const next = [
+        `【${postType === "wishlist" ? "求购" : "闲置转让"}】${title}`,
+        postType === "wishlist"
+          ? `预算：￥${Number(price || 0).toFixed(0)}，最好校内自提，急的话可当面看货/验机。`
+          : `价格：￥${Number(price || 0).toFixed(0)}，同学爽快可小刀。`,
+        `分类：${category}｜交易地点：${meetupLocation}`,
+        "亮点：",
+        "- 走闲鱼同款“信息清晰”写法：成色/附件/瑕疵/使用时长都欢迎留言问我",
+        hint ? `- ${hint}` : ""
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      setValue("description", next, { shouldValidate: true, shouldDirty: true });
+    } catch (e: any) {
+      setSubmitMessage(e?.message ?? "AI 优化失败");
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
   const refresh3d = async () => {
     if (!createdItemId) {
       setThreeDMessage("请先发布（并生成 itemId）后再刷新。");
@@ -257,24 +351,56 @@ export function PublishItemForm() {
       {!authUserId ? <LoginScreen onAuthed={refreshAuth} /> : null}
       {authUserId ? (
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card sm:p-7">
-        <h1 className="text-xl font-bold text-slate-900">Publish Item</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-bold text-slate-900">{postType === "wishlist" ? "发布求购" : "发布宝贝"}</h1>
+          <div className="inline-flex rounded-full bg-gray-100 p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setPostType("item")}
+              className={["rounded-full px-3 py-1.5 font-semibold", postType === "item" ? "bg-black text-white" : "text-gray-700"].join(" ")}
+            >
+              出售宝贝
+            </button>
+            <button
+              type="button"
+              onClick={() => setPostType("wishlist")}
+              className={["rounded-full px-3 py-1.5 font-semibold", postType === "wishlist" ? "bg-black text-white" : "text-gray-700"].join(" ")}
+            >
+              求购需求
+            </button>
+          </div>
+        </div>
         <p className="mt-1 text-sm text-slate-500">
-          Create a clean listing so students can find your item quickly.
+          {postType === "wishlist"
+            ? "把你的需求说清楚，同学们会来留言联系你。"
+            : "Create a clean listing so students can find your item quickly."}
         </p>
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-5">
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">Title</span>
+            <span className="mb-2 block text-sm font-medium text-slate-700">
+              {postType === "wishlist" ? "需求标题" : "Title"}
+            </span>
             <input
               {...register("title")}
               className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none ring-indigo-200 focus:ring-2"
-              placeholder="e.g. Calculus Textbook 9th Edition"
+              placeholder={postType === "wishlist" ? "例如：求购 二手 iPad 9 代 64G" : "e.g. Calculus Textbook 9th Edition"}
             />
             {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
           </label>
 
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">Description</span>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="block text-sm font-medium text-slate-700">Description</span>
+              <button
+                type="button"
+                onClick={optimizeCopy}
+                disabled={optimizing}
+                className="rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {optimizing ? "优化中..." : "AI 优化文案"}
+              </button>
+            </div>
             <textarea
               {...register("description")}
               rows={4}
@@ -288,7 +414,9 @@ export function PublishItemForm() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700">Price</span>
+              <span className="mb-2 block text-sm font-medium text-slate-700">
+                {postType === "wishlist" ? "预算" : "Price"}
+              </span>
               <input
                 type="number"
                 min="0"
@@ -330,77 +458,90 @@ export function PublishItemForm() {
             </select>
           </label>
 
-          <div
-            className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${dragAreaClasses}`}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setIsDragging(true);
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setIsDragging(false);
-              onSelectFiles(event.dataTransfer.files);
-            }}
-          >
-            <p className="text-sm font-medium text-slate-700">Drag and drop photos here</p>
-            <p className="mt-1 text-xs text-slate-500">
-              最多 6 张，提交后会上传到 Supabase Storage `item-images` 桶
-            </p>
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={(event) => onSelectFiles(event.target.files)}
-              className="mt-3 block w-full text-xs text-slate-600"
-            />
-            <button
-              type="button"
-              className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700"
-            >
-              已选择 {files.length} 张
-            </button>
-          </div>
-          {previewUrls.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {previewUrls.map((url, idx) => (
-                <img
-                  key={`${url}-${idx}`}
-                  src={url}
-                  alt={`preview-${idx}`}
-                  className="h-20 w-full rounded-lg object-cover"
+          {postType === "item" ? (
+            <>
+              <div
+                className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${dragAreaClasses}`}
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsDragging(false);
+                  onSelectFiles(event.dataTransfer.files);
+                }}
+              >
+                <p className="text-sm font-medium text-slate-700">Drag and drop photos here</p>
+                <p className="mt-1 text-xs text-slate-500">
+                  最多 6 张，提交后会上传到 Supabase Storage `item-images` 桶
+                </p>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={(event) => onSelectFiles(event.target.files)}
+                  className="mt-3 block w-full text-xs text-slate-600"
                 />
-              ))}
+                <button
+                  type="button"
+                  className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700"
+                >
+                  已选择 {files.length} 张
+                </button>
+              </div>
+              {previewUrls.length > 0 ? (
+                <div className="grid grid-cols-3 gap-2">
+                  {previewUrls.map((url, idx) => (
+                    <img
+                      key={`${url}-${idx}`}
+                      src={url}
+                      alt={`preview-${idx}`}
+                      className="h-20 w-full rounded-lg object-cover"
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm font-semibold text-slate-900">求购提示</p>
+              <p className="mt-1 text-xs text-slate-600">
+                求购需求通常不需要上传图片。发布后同学们会在“留言问答”里联系你。
+              </p>
             </div>
-          ) : null}
+          )}
 
-          <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">
-              3D Video (optional, 10–15s orbit)
-            </span>
-            <input
-              type="file"
-              accept="video/*"
-              onChange={(event) => onSelectVideo(event.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-slate-700"
-            />
-            {videoFile ? (
-              <p className="mt-1 text-xs text-slate-500">已选择视频：{videoFile.name}</p>
-            ) : (
-              <p className="mt-1 text-xs text-slate-500">不上传视频也可正常发布（不生成 3D）。</p>
-            )}
-          </label>
+          {postType === "item" ? (
+            <label className="block">
+              <span className="mb-2 block text-sm font-medium text-slate-700">
+                3D Video (optional, 10–15s orbit)
+              </span>
+              <input
+                type="file"
+                accept="video/*"
+                onChange={(event) => onSelectVideo(event.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-slate-700"
+              />
+              {videoFile ? (
+                <p className="mt-1 text-xs text-slate-500">已选择视频：{videoFile.name}</p>
+              ) : (
+                <p className="mt-1 text-xs text-slate-500">不上传视频也可正常发布（不生成 3D）。</p>
+              )}
+            </label>
+          ) : null}
 
           <button
             type="submit"
             disabled={isSubmitting}
             className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isSubmitting ? "Publishing..." : "Publish Item"}
+            {isSubmitting ? "Publishing..." : postType === "wishlist" ? "发布求购" : "Publish Item"}
           </button>
           {submitMessage ? <p className="text-sm text-slate-600">{submitMessage}</p> : null}
 
-          {createdItemId ? (
+          {postType === "item" && createdItemId ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm font-semibold text-slate-900">3D Pipeline</p>
               <p className="mt-1 text-xs text-slate-600">itemId: {createdItemId}</p>
@@ -419,7 +560,7 @@ export function PublishItemForm() {
             </div>
           ) : null}
 
-          {modelGlbUrl ? (
+          {postType === "item" && modelGlbUrl ? (
             <Item3DViewer modelGlbUrl={modelGlbUrl} posterUrl={previewUrls[0]} />
           ) : null}
         </form>

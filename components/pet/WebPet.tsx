@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { MessageCircle, Mic, Send } from "lucide-react";
 import { Live2DDisplay } from "@/components/live2d/Live2DDisplay";
 
@@ -17,10 +18,13 @@ type SearchResult = {
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export function WebPet() {
+  const router = useRouter();
   const [open, setOpen] = useState(true); // default enabled
   const [petHidden, setPetHidden] = useState<"none" | "left" | "right">("none");
   const [panelOpen, setPanelOpen] = useState(false);
   const [mode, setMode] = useState<"chat" | "search">("chat");
+  const [bubble, setBubble] = useState<string | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [listening, setListening] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -32,6 +36,7 @@ export function WebPet() {
   const recognitionRef = useRef<any>(null);
   const [modelOk, setModelOk] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: -1, y: -1 });
+  const hoverTimerRef = useRef<number | null>(null);
   const dragRef = useRef<{
     dragging: boolean;
     startX: number;
@@ -63,6 +68,10 @@ export function WebPet() {
         try {
           recognitionRef.current.stop();
         } catch {}
+      }
+      if (hoverTimerRef.current != null) {
+        window.clearTimeout(hoverTimerRef.current);
+        hoverTimerRef.current = null;
       }
       if (rafRef.current != null) {
         cancelAnimationFrame(rafRef.current);
@@ -185,6 +194,12 @@ export function WebPet() {
   const petW = 220;
   const petH = 260;
   const snap = 24;
+  const bubblePool = [
+    "学长，有人在求购你发布的考研笔记哦！",
+    "想更快出手？标题写清楚，价格更好谈～",
+    "点我一下：一键发布 / 我的收藏 / 咨询客服",
+    "校园热搜更新啦：#急售 #考研资料 #宿舍火锅"
+  ];
 
   return (
     <div
@@ -302,6 +317,13 @@ export function WebPet() {
       <div
         className="relative"
         style={{ width: `${petW}px`, height: `${petH}px` }}
+        onMouseEnter={() => {
+          if (typeof window === "undefined") return;
+          if (hoverTimerRef.current != null) window.clearTimeout(hoverTimerRef.current);
+          const next = bubblePool[Math.floor(Math.random() * bubblePool.length)] ?? "Hi~";
+          setBubble(next);
+          hoverTimerRef.current = window.setTimeout(() => setBubble(null), 2200) as unknown as number;
+        }}
         onPointerDown={(e) => {
           (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
           dragRef.current = {
@@ -330,6 +352,10 @@ export function WebPet() {
           }
         }}
         onPointerUp={() => {
+          const moved =
+            dragRef.current
+              ? Math.hypot(pos.x - dragRef.current.originX, pos.y - dragRef.current.originY)
+              : 999;
           if (typeof window !== "undefined") {
             const maxX = window.innerWidth - petW;
             if (pos.x <= snap) {
@@ -344,9 +370,18 @@ export function WebPet() {
             }
           }
           if (dragRef.current) dragRef.current.dragging = false;
+          if (moved < 6) setMenuOpen((v) => !v);
         }}
         onDoubleClick={() => setPanelOpen((v) => !v)}
       >
+        {bubble ? (
+          <div className="pointer-events-none absolute -top-3 left-2 z-20 -translate-y-full">
+            <div className="max-w-[220px] rounded-2xl bg-white/90 px-3 py-2 text-xs text-gray-800 backdrop-blur shadow-[0_16px_50px_-35px_rgba(0,0,0,0.35)] border border-white/60">
+              {bubble}
+            </div>
+          </div>
+        ) : null}
+
         <button
           type="button"
           onClick={(e) => {
@@ -359,6 +394,47 @@ export function WebPet() {
         >
           <MessageCircle className="h-4 w-4" />
         </button>
+
+        {menuOpen ? (
+          <div className="absolute inset-0 z-10 flex items-center justify-center">
+            <div className="relative h-[160px] w-[160px]">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  router.push("/publish");
+                }}
+                className="absolute left-1/2 top-0 -translate-x-1/2 rounded-full bg-black px-4 py-2 text-xs font-semibold text-white shadow-lg"
+              >
+                一键发布
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  router.push("/following");
+                }}
+                className="absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-lg backdrop-blur"
+              >
+                我的收藏
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  setMode("chat");
+                  setPanelOpen(true);
+                }}
+                className="absolute right-0 top-1/2 -translate-y-1/2 rounded-full bg-white/90 px-4 py-2 text-xs font-semibold text-gray-900 shadow-lg backdrop-blur"
+              >
+                咨询客服
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="h-full w-full">
           <Live2DDisplay

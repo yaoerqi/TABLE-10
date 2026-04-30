@@ -74,10 +74,10 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void }) {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-gradient-to-b from-gray-100/80 to-white">
+    <main className="relative min-h-screen overflow-hidden">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute left-1/2 top-0 h-[28rem] w-[36rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-gray-200 to-gray-100 blur-3xl opacity-70" />
-        <div className="absolute -bottom-24 left-1/2 h-[20rem] w-[28rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-gray-100 to-white blur-3xl opacity-60" />
+        <div className="absolute left-1/2 top-0 h-[30rem] w-[38rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-indigo-200/70 via-slate-200/60 to-emerald-200/60 blur-3xl opacity-70" />
+        <div className="absolute -bottom-28 left-1/2 h-[22rem] w-[30rem] -translate-x-1/2 rounded-full bg-gradient-to-r from-slate-100/60 via-white/60 to-rose-100/50 blur-3xl opacity-70" />
       </div>
 
       <section className="relative mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 py-10">
@@ -89,7 +89,7 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void }) {
           用你的校内邮箱获取访问码
         </p>
 
-        <div className="mt-8 w-full">
+        <div className="mt-8 w-full rounded-3xl border border-white/30 bg-white/50 p-5 backdrop-blur-xl shadow-[0_20px_60px_-40px_rgba(0,0,0,0.28)]">
           <label className="sr-only" htmlFor="edu-email">
             Edu email
           </label>
@@ -100,14 +100,14 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void }) {
             inputMode="email"
             autoComplete="email"
             placeholder="you@school.edu.cn"
-            className="w-full rounded-full bg-white/70 px-5 py-3 text-gray-900 placeholder:text-gray-400 outline-none border border-transparent focus:border-transparent focus:ring-2 focus:ring-black"
+            className="input-pill"
           />
 
           <button
             type="button"
             onClick={onGetCode}
             disabled={loading}
-            className="mt-5 w-full rounded-full bg-black px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-gray-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-primary mt-5 w-full"
           >
             {loading ? "Sending..." : "Get Access Code"}
           </button>
@@ -116,7 +116,7 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void }) {
             type="button"
             onClick={onBrowse}
             disabled={loading}
-            className="mt-3 w-full rounded-full border border-gray-200 bg-white/60 px-6 py-3 text-sm font-semibold text-gray-900 shadow-sm transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="btn-secondary mt-3 w-full"
           >
             Browse Without Access Code
           </button>

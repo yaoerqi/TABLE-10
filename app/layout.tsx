@@ -13,7 +13,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>
+      <body className="app-shell">
         <Script
           // Cubism 4 core runtime required by pixi-live2d-display/cubism4
           src="/vendor/live2dcubismcore.js"
