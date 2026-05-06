@@ -6,9 +6,8 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
-import { ensureStudentProfile } from "@/lib/supabase/studentAuth";
-import { isDemoAuthed } from "@/lib/demo/demoAuth";
 import type { DbItem } from "@/lib/supabase/types";
+import { firstItemImageUrl } from "@/lib/itemImages";
 
 type ProfileTab = "published" | "sold" | "bought";
 
@@ -20,6 +19,7 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [credit, setCredit] = useState(680);
   const [items, setItems] = useState<DbItem[]>([]);
+  const [withdrawingId, setWithdrawingId] = useState<string | null>(null);
   const [errorText, setErrorText] = useState("");
 
   const creditLevel = useMemo(() => {
@@ -34,47 +34,32 @@ export default function ProfilePage() {
       setLoading(true);
       setErrorText("");
 
-      if (isDemoAuthed()) {
-        setNickname("演示用户");
-        setAvatarUrl(null);
-        setCredit(720);
-        setItems([]);
-        setLoading(false);
-        return;
-      }
-
       if (!hasSupabaseEnv) {
         setErrorText("未配置 Supabase 环境变量");
         setLoading(false);
         return;
       }
 
-      const {
-        data: { user }
-      } = await supabase.auth.getUser();
-      if (!user) {
+      const meResp = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
+      const userId = meResp?.ok && meResp?.user?.id ? String(meResp.user.id) : null;
+      if (!userId) {
         router.push("/");
         return;
       }
 
-      const res = await ensureStudentProfile();
-      if (!res.ok) {
-        router.push("/");
-        return;
-      }
-
-      const { data: me } = await supabase
+      const { data: profile } = await supabase
         .from("users")
         .select("nickname,avatar_url")
-        .eq("id", user.id)
+        .eq("id", userId)
         .maybeSingle();
-      if (me?.nickname) setNickname(me.nickname);
-      if (me?.avatar_url) setAvatarUrl(me.avatar_url);
+      if (profile?.nickname) setNickname(profile.nickname);
+      if (profile?.avatar_url) setAvatarUrl(profile.avatar_url);
 
       const { data: myItems, error } = await supabase
         .from("items")
         .select("id,title,price,category,images_array,meetup_location,seller_id,status")
-        .eq("seller_id", user.id)
+        .eq("seller_id", userId)
+        .eq("status", "available")
         .order("created_at", { ascending: false });
       if (error) {
         setErrorText(error.message);
@@ -86,14 +71,30 @@ export default function ProfilePage() {
     })();
   }, [router]);
 
-  const logout = async () => {
+  const withdrawListing = async (itemId: string) => {
+    if (!confirm("确定下架该商品？下架后首页推荐将不再展示。")) return;
+    setWithdrawingId(itemId);
+    setErrorText("");
     try {
-      if (isDemoAuthed()) {
-        window.localStorage.removeItem("campus_demo_authed");
-        router.push("/");
+      const resp = await fetch(`/api/items/${encodeURIComponent(itemId)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status: "inactive" })
+      });
+      const json = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!resp.ok || !json.ok) {
+        setErrorText(json.error ? String(json.error) : "下架失败");
         return;
       }
-      await supabase.auth.signOut();
+      setItems((prev) => prev.filter((x) => x.id !== itemId));
+    } finally {
+      setWithdrawingId(null);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
       router.push("/");
     } catch {
       router.push("/");
@@ -148,6 +149,19 @@ export default function ProfilePage() {
         </div>
       </section>
 
+      <section className="mt-5 rounded-3xl border border-emerald-200/70 bg-emerald-50/70 p-4 backdrop-blur-sm">
+        <Link
+          href="/campus"
+          className="flex items-center justify-between gap-2 text-sm font-semibold text-emerald-950 hover:text-emerald-900"
+        >
+          <span className="inline-flex items-center gap-2">
+            <ShieldCheck className="h-4 w-4 shrink-0" />
+            校内二手指南（面交半径、避雷、课余时段建议）
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+        </Link>
+      </section>
+
       <section className="mt-5">
         <div className="inline-flex w-full rounded-full bg-gray-100 p-1">
           <button type="button" onClick={() => setTab("published")} className={tabClass(tab === "published")}>
@@ -173,34 +187,42 @@ export default function ProfilePage() {
           ) : items.length ? (
             <div className="grid gap-3">
               {items.slice(0, 10).map((it) => {
-                const img = it.images_array?.[0];
+                const hasImg = Boolean(firstItemImageUrl(it.images_array));
+                const thumbSrc = hasImg
+                  ? `/api/items/${encodeURIComponent(it.id)}/card-image`
+                  : "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=400&q=80";
                 return (
-                  <Link
+                  <div
                     key={it.id}
-                    href={`/item/${encodeURIComponent(it.id)}`}
-                    className="flex items-center gap-3 rounded-3xl border border-white/30 bg-white/60 p-3 backdrop-blur-xl transition hover:bg-white"
+                    className="flex items-stretch gap-2 rounded-3xl border border-white/30 bg-white/60 p-2 pl-3 backdrop-blur-xl"
                   >
-                    <div className="h-14 w-14 overflow-hidden rounded-2xl bg-gray-100">
-                      <img
-                        src={
-                          img ||
-                          "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=400&q=80"
-                        }
-                        alt={it.title}
-                        className="h-full w-full object-cover"
-                      />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-slate-900">{it.title}</p>
-                      <p className="mt-0.5 text-xs text-gray-500">
-                        {it.category} · {it.meetup_location}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-sm font-bold text-slate-900">${Number(it.price).toFixed(2)}</p>
-                      <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
-                    </div>
-                  </Link>
+                    <Link
+                      href={`/item/${encodeURIComponent(it.id)}`}
+                      className="flex min-w-0 flex-1 items-center gap-3 py-1 transition hover:opacity-90"
+                    >
+                      <div className="h-14 w-14 shrink-0 overflow-hidden rounded-2xl bg-gray-100">
+                        <img src={thumbSrc} alt={it.title} className="h-full w-full object-cover" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900">{it.title}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          {it.category} · {it.meetup_location}
+                        </p>
+                      </div>
+                      <div className="shrink-0 self-center pr-1 text-right">
+                        <p className="text-sm font-bold text-slate-900">${Number(it.price).toFixed(2)}</p>
+                        <ChevronRight className="ml-auto h-4 w-4 text-gray-400" />
+                      </div>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => void withdrawListing(it.id)}
+                      disabled={withdrawingId === it.id}
+                      className="shrink-0 self-center rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
+                    >
+                      {withdrawingId === it.id ? "处理中…" : "下架"}
+                    </button>
+                  </div>
                 );
               })}
             </div>

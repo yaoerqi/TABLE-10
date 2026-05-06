@@ -5,8 +5,6 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut, MapPin, ShieldCheck } from "lucide-react";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
-import { ensureStudentProfile } from "@/lib/supabase/studentAuth";
-import { isDemoAuthed } from "@/lib/demo/demoAuth";
 
 function Row(props: { icon: React.ReactNode; title: string; right?: React.ReactNode; onClick?: () => void; href?: string }) {
   const content = (
@@ -37,15 +35,7 @@ export default function SettingsPage() {
 
   const logout = async () => {
     try {
-      if (isDemoAuthed()) {
-        window.localStorage.removeItem("campus_demo_authed");
-        router.push("/");
-        return;
-      }
-      if (hasSupabaseEnv) {
-        await ensureStudentProfile().catch(() => null);
-        await supabase.auth.signOut();
-      }
+      await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
     } finally {
       router.push("/");
     }

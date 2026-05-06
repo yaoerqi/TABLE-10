@@ -1,22 +1,15 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSessionAccountId } from "@/lib/server/session";
 
 export const runtime = "nodejs";
-
-function getBearerToken(headers: Headers) {
-  const auth = headers.get("authorization") || headers.get("Authorization");
-  if (!auth) return null;
-  const parts = auth.split(" ");
-  if (parts.length !== 2) return null;
-  if (parts[0].toLowerCase() !== "bearer") return null;
-  return parts[1];
-}
 
 export async function POST(request: Request) {
   // ---- Env ----
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const meshyApiKey = process.env.MESHY_API_KEY;
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return NextResponse.json(
@@ -24,121 +17,102 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-  if (!process.env.REALI3_API_KEY) {
-    return NextResponse.json({ error: "Missing REALI3_API_KEY env var" }, { status: 500 });
+  if (!meshyApiKey) {
+    return NextResponse.json({ error: "Missing MESHY_API_KEY env var" }, { status: 500 });
   }
 
   // ---- Auth ----
-  const token = getBearerToken(request.headers);
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized: missing Bearer token" }, { status: 401 });
-  }
+  const accountId = await getSessionAccountId();
+  if (!accountId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const supabaseAnon = createClient(supabaseUrl, anonKey);
-  const {
-    data: { user },
-    error: authError
-  } = await supabaseAnon.auth.getUser(token);
-  if (authError || !user) {
-    return NextResponse.json(
-      { error: "Unauthorized: invalid token" },
-      { status: 401 }
-    );
-  }
+  // Note: We no longer enforce .edu.cn here to keep testing friction low.
 
-  // Optional: enforce student email here (server-side hardening)
-  const email = user.email ?? null;
-  if (!email || !/\.edu\.cn$/i.test(email)) {
-    return NextResponse.json({ error: "Only .edu.cn accounts allowed" }, { status: 403 });
-  }
-
-  // ---- Parse form-data ----
-  const form = await request.formData();
-  const itemId = form.get("itemId");
-  const video = form.get("video");
-  if (typeof itemId !== "string" || !video || !(video instanceof File)) {
-    return NextResponse.json(
-      { error: "Bad request: need itemId (string) and video (file)" },
-      { status: 400 }
-    );
-  }
-  if (!video.type.startsWith("video/")) {
-    return NextResponse.json({ error: "Uploaded file must be a video" }, { status: 400 });
+  // ---- Parse JSON ----
+  const body = (await request.json().catch(() => ({}))) as {
+    itemId?: string;
+    prompt?: string;
+  };
+  const itemId = (body.itemId ?? "").toString().trim();
+  const prompt = (body.prompt ?? "").toString().trim();
+  if (!itemId) {
+    return NextResponse.json({ error: "Bad request: need itemId" }, { status: 400 });
   }
 
   // ---- Admin (service role) client ----
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey);
-  const bucket = "item-images";
 
   // ---- Ownership check ----
   const { data: itemRow, error: itemFetchError } = await supabaseAdmin
     .from("items")
-    .select("id,seller_id")
+    .select("id,seller_id,images_array")
     .eq("id", itemId)
     .maybeSingle();
   if (itemFetchError || !itemRow) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
-  if (itemRow.seller_id !== user.id) {
+  if (itemRow.seller_id !== accountId) {
     return NextResponse.json({ error: "Forbidden: not item owner" }, { status: 403 });
   }
 
-  // ---- Upload video to Supabase Storage ----
-  const originalName = video.name || "upload.mp4";
-  const ext = originalName.split(".").pop() || "mp4";
-  const storagePath = `${itemId}/video/${Date.now()}-${crypto.randomUUID()}.${ext}`;
-
-  const { error: uploadError } = await supabaseAdmin.storage
-    .from(bucket)
-    .upload(storagePath, video, {
-      contentType: video.type || "video/mp4",
-      upsert: false
-    });
-
-  if (uploadError) {
-    return NextResponse.json({ error: `Video upload failed: ${uploadError.message}` }, { status: 500 });
+  const images = (itemRow as any)?.images_array as unknown;
+  const imageUrl = Array.isArray(images) && typeof images[0] === "string" ? (images[0] as string) : "";
+  if (!imageUrl) {
+    return NextResponse.json({ error: "Missing item images: need images_array[0] to generate 3D" }, { status: 400 });
   }
 
-  const { data: publicUrlData } = supabaseAdmin.storage
-    .from(bucket)
-    .getPublicUrl(storagePath);
+  // Meshy must be able to download the image URL from the public internet.
+  // If the bucket is private, `getPublicUrl` is not actually fetchable; generate a short-lived signed URL instead.
+  let meshyImageUrl = imageUrl;
+  try {
+    const marker = "/storage/v1/object/public/item-images/";
+    const idx = imageUrl.indexOf(marker);
+    if (idx >= 0) {
+      const objectPath = decodeURIComponent(imageUrl.slice(idx + marker.length));
+      const { data: signed, error: signErr } = await supabaseAdmin.storage
+        .from("item-images")
+        .createSignedUrl(objectPath, 60 * 60 * 24 * 7); // 7d
+      if (!signErr && signed?.signedUrl) {
+        meshyImageUrl = signed.signedUrl;
+      }
+    }
+  } catch {
+    // fall back to original URL
+  }
 
-  const videoPublicUrl = publicUrlData.publicUrl;
-
-  // ---- Trigger Reali3 reconstruction (video to GLB) ----
-  // Reali3 docs mention POST /v1/reconstruction with multipart/form-data.
-  const reali3Resp = await fetch("https://api.reali3.net/v1/reconstruction", {
+  // ---- Trigger Meshy Image -> 3D task ----
+  const meshyResp = await fetch("https://api.meshy.ai/openapi/v1/image-to-3d", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${process.env.REALI3_API_KEY}`
+      Authorization: `Bearer ${meshyApiKey}`,
+      "content-type": "application/json"
     },
-    body: (() => {
-      const fd = new FormData();
-      // API expects field name "files" per their docs.
-      fd.append("files", video, originalName);
-      return fd;
-    })()
+    body: JSON.stringify({
+      image_url: meshyImageUrl,
+      ai_model: "latest",
+      should_texture: true,
+      enable_pbr: true,
+      target_formats: ["glb"],
+      ...(prompt ? { texture_prompt: prompt.slice(0, 600) } : {})
+    })
   });
 
-  if (!reali3Resp.ok) {
-    const text = await reali3Resp.text().catch(() => "");
+  const meshyJson: any = await meshyResp.json().catch(() => ({}));
+  if (!meshyResp.ok) {
     return NextResponse.json(
-      { error: "Reali3 job create failed", status: reali3Resp.status, details: text },
+      { error: "Meshy task create failed", status: meshyResp.status, details: meshyJson },
       { status: 502 }
     );
   }
 
-  const reali3Json: any = await reali3Resp.json().catch(() => ({}));
-  const reconstructionId =
-    reali3Json.id ||
-    reali3Json.reconstruction_id ||
-    reali3Json.reconstructionId ||
-    reali3Json.rec_id ||
-    reali3Json.recId;
-
-  if (!reconstructionId) {
+  const result = meshyJson?.result;
+  const taskId =
+    meshyJson?.id ||
+    meshyJson?.task_id ||
+    (typeof result === "string" ? result : null) ||
+    (result && typeof result === "object" ? (result as any).id : null);
+  if (!taskId) {
     return NextResponse.json(
-      { error: "Reali3 job created but reconstructionId missing", details: reali3Json },
+      { error: "Meshy task created but id missing", details: meshyJson },
       { status: 502 }
     );
   }
@@ -147,8 +121,7 @@ export async function POST(request: Request) {
   const { error: updateError } = await supabaseAdmin
     .from("items")
     .update({
-      video_url: videoPublicUrl,
-      "3d_job_id": String(reconstructionId),
+      "3d_job_id": String(taskId),
       "3d_status": "processing"
     })
     .eq("id", itemId);
@@ -157,12 +130,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `DB update failed: ${updateError.message}` }, { status: 500 });
   }
 
+  const { data: verify, error: verifyError } = await supabaseAdmin
+    .from("items")
+    .select('id,"3d_job_id"')
+    .eq("id", itemId)
+    .maybeSingle();
+
+  if (verifyError) {
+    return NextResponse.json({ error: `DB verify failed: ${verifyError.message}` }, { status: 500 });
+  }
+  const persistedJobId = (verify as any)?.["3d_job_id"] as string | null | undefined;
+  if (!persistedJobId) {
+    return NextResponse.json(
+      {
+        error:
+          "Meshy task created but DB did not persist 3d_job_id (likely missing column). Run supabase/migrations/20260501200000_items_3d_columns.sql in Supabase SQL Editor."
+      },
+      { status: 500 }
+    );
+  }
+
   return NextResponse.json({
     ok: true,
     itemId,
-    reconstructionId,
-    videoPublicUrl,
-    status: "processing"
+    taskId: String(taskId),
+    status: "processing",
+    provider: "meshy"
   });
 }
 

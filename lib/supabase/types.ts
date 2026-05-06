@@ -24,4 +24,11 @@ export interface DbItem {
   "3d_job_id"?: string | null;
   "3d_status"?: "pending" | "processing" | "completed" | "failed" | null;
   model_glb_url?: string | null;
+
+  is_auction?: boolean;
+  auction_start_price?: number | null;
+  auction_current_price?: number | null;
+  auction_end_at?: string | null;
+  auction_step?: number | null;
+  auction_high_bidder_id?: string | null;
 }

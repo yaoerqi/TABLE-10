@@ -1,3 +1,5 @@
+import type { CampusPickupZoneId } from "@/lib/campus";
+
 export function safeJsonParse<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
@@ -20,6 +22,9 @@ export function saveLocal<T>(key: string, value: T) {
 const FAV_KEY = "ent:favorites:v1";
 const CLICK_KEY = "ent:clicks:v1";
 const CAT_PREF_KEY = "ent:catpref:v1";
+const HOME_LAYOUT_KEY = "ent:home_layout:v1";
+const CAMPUS_PICKUP_ZONE_KEY = "ent:campus_pickup_zone:v1";
+const CAMPUS_SAFETY_STRIP_HIDDEN_KEY = "ent:campus_safety_strip_hidden:v1";
 
 export function getFavorites(): string[] {
   return loadLocal<string[]>(FAV_KEY, []);
@@ -60,5 +65,35 @@ export function bumpCategoryPref(category: string, delta = 1) {
 
 export function getCategoryPrefs(): CategoryPrefState {
   return loadLocal<CategoryPrefState>(CAT_PREF_KEY, {});
+}
+
+export type HomeLayoutMode = "grid" | "feed";
+
+export function getHomeLayoutMode(): HomeLayoutMode {
+  const v = loadLocal<HomeLayoutMode>(HOME_LAYOUT_KEY, "grid");
+  return v === "feed" ? "feed" : "grid";
+}
+
+export function setHomeLayoutMode(mode: HomeLayoutMode) {
+  saveLocal<HomeLayoutMode>(HOME_LAYOUT_KEY, mode);
+}
+
+const campusZoneIds = new Set<CampusPickupZoneId>(["all", "dorm", "library", "teaching", "dining", "gate"]);
+
+export function getCampusPickupZone(): CampusPickupZoneId {
+  const v = loadLocal<string>(CAMPUS_PICKUP_ZONE_KEY, "all");
+  return campusZoneIds.has(v as CampusPickupZoneId) ? (v as CampusPickupZoneId) : "all";
+}
+
+export function setCampusPickupZone(zone: CampusPickupZoneId) {
+  saveLocal(CAMPUS_PICKUP_ZONE_KEY, zone);
+}
+
+export function isCampusSafetyStripHidden(): boolean {
+  return loadLocal<boolean>(CAMPUS_SAFETY_STRIP_HIDDEN_KEY, false);
+}
+
+export function setCampusSafetyStripHidden(hidden: boolean) {
+  saveLocal(CAMPUS_SAFETY_STRIP_HIDDEN_KEY, hidden);
 }
 

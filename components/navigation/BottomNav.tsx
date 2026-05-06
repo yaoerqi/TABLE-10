@@ -1,37 +1,84 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { Flame, Grid2X2, Heart, Home, Plus, UserRound } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Flame, Grid2X2, Home, Plus, UserRound } from "lucide-react";
+import { setHomeLayoutMode } from "@/lib/clientPrefs";
+import { Suspense } from "react";
 
-const tabs = [
+const leftTabs = [
   { key: "recommend", label: "推荐", href: "/?tab=recommend", Icon: Home },
-  { key: "hot", label: "热点", href: "/?tab=hot", Icon: Flame },
-  { key: "following", label: "关注", href: "/following", Icon: Heart },
-  { key: "categories", label: "分类", href: "/?tab=recommend&openCats=1", Icon: Grid2X2 },
+  { key: "hot", label: "热点", href: "/?tab=hot", Icon: Flame }
+] as const;
+
+const rightTabs = [
+  { key: "layout", label: "排版", Icon: Grid2X2 },
   { key: "profile", label: "我的", href: "/profile", Icon: UserRound }
 ] as const;
 
-export function BottomNav() {
+function BottomNavInner() {
   const pathname = usePathname();
+  const router = useRouter();
   const sp = useSearchParams();
   const activeTab = sp.get("tab") ?? "recommend";
-  const openCats = sp.get("openCats") ?? "0";
+  const layout = (sp.get("layout") ?? "").toString();
+
+  const isFeed = layout === "feed";
 
   return (
     <nav className="fixed bottom-6 left-4 right-4 z-40">
-      <div className="mx-auto relative grid grid-cols-6 items-center rounded-3xl border border-white/25 bg-white/60 backdrop-blur-xl shadow-[0_24px_70px_-50px_rgba(0,0,0,0.55)]">
-        {tabs.map((t) => {
+      <div className="mx-auto relative grid grid-cols-5 items-center rounded-3xl border border-white/25 bg-white/60 backdrop-blur-xl shadow-[0_24px_70px_-50px_rgba(0,0,0,0.55)]">
+        {leftTabs.map((t) => {
           const isActive =
-            (t.key === "following" && pathname === "/following") ||
-            (t.key === "profile" && pathname === "/profile") ||
-            (t.key === "profile" && pathname === "/settings") ||
-            (pathname === "/" &&
-              t.key !== "following" &&
-              t.key !== "profile" &&
-              (t.key === "categories" ? openCats === "1" : t.key === activeTab));
+            pathname === "/" && (t.key === "recommend" ? activeTab === "recommend" : activeTab === "hot");
           const Icon = t.Icon;
+          return (
+            <Link
+              key={t.key}
+              href={t.href}
+              className={[
+                "flex h-12 w-full items-center justify-center transition",
+                isActive ? "text-slate-950" : "text-slate-500 hover:text-slate-700"
+              ].join(" ")}
+              aria-label={t.label}
+            >
+              <Icon className="h-5 w-5" />
+            </Link>
+          );
+        })}
 
+        <div className="h-12 shrink-0" aria-hidden />
+
+        {rightTabs.map((t) => {
+          const Icon = t.Icon;
+          if (t.key === "layout") {
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => {
+                  const current = layout === "feed" ? "feed" : "grid";
+                  const next = current === "feed" ? "grid" : "feed";
+                  setHomeLayoutMode(next);
+
+                  const qp = new URLSearchParams(sp.toString());
+                  qp.delete("openCats");
+                  if (next === "feed") qp.set("layout", "feed");
+                  else qp.delete("layout");
+                  router.push(`/?${qp.toString()}`);
+                }}
+                className={[
+                  "flex h-12 w-full items-center justify-center transition",
+                  pathname === "/" && isFeed ? "text-slate-950" : "text-slate-500 hover:text-slate-700"
+                ].join(" ")}
+                aria-label="切换排版"
+              >
+                <Icon className="h-5 w-5" />
+              </button>
+            );
+          }
+
+          const isActive = pathname === "/profile" || pathname === "/settings";
           return (
             <Link
               key={t.key}
@@ -58,6 +105,14 @@ export function BottomNav() {
         </div>
       </div>
     </nav>
+  );
+}
+
+export function BottomNav() {
+  return (
+    <Suspense fallback={null}>
+      <BottomNavInner />
+    </Suspense>
   );
 }
 

@@ -6,10 +6,7 @@ import { Heart } from "lucide-react";
 import { BottomNav } from "@/components/navigation/BottomNav";
 import { LoginScreen } from "@/components/auth/LoginScreen";
 import { supabase, hasSupabaseEnv } from "@/lib/supabase/client";
-import { ensureStudentProfile } from "@/lib/supabase/studentAuth";
 import type { DbItem } from "@/lib/supabase/types";
-import { isDemoAuthed } from "@/lib/demo/demoAuth";
-import { mockItems } from "@/lib/mock/items";
 import { getFavorites, toggleFavorite } from "@/lib/clientPrefs";
 
 export function FollowingPage() {
@@ -24,25 +21,6 @@ export function FollowingPage() {
   const load = async () => {
     const favs = getFavorites();
     setFavoriteIds(favs);
-
-    if (isDemoAuthed()) {
-      const demoSellerId = "demo-seller";
-      const demoItems: DbItem[] = mockItems.map((m) => ({
-        id: `demo-${m.id}`,
-        seller_id: demoSellerId,
-        title: m.title,
-        description: "",
-        price: m.price,
-        category: m.category,
-        images_array: [m.imageUrl],
-        meetup_location: m.meetupLocation,
-        status: "available"
-      }));
-      setItems(demoItems);
-      setLoading(false);
-      setErrorText("");
-      return;
-    }
 
     if (!hasSupabaseEnv) {
       setLoading(false);
@@ -74,13 +52,6 @@ export function FollowingPage() {
 
   useEffect(() => {
     (async () => {
-      if (isDemoAuthed()) {
-        setAuthChecked(true);
-        setIsAuthed(true);
-        await load();
-        return;
-      }
-
       if (!hasSupabaseEnv) {
         setAuthChecked(true);
         setIsAuthed(false);
@@ -88,43 +59,20 @@ export function FollowingPage() {
         return;
       }
 
-      const {
-        data: { session }
-      } = await supabase.auth.getSession();
-
-      if (!session?.user) {
+      const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
+      if (!me?.ok || !me?.user?.id) {
         setAuthChecked(true);
         setIsAuthed(false);
         setLoading(false);
         return;
       }
 
-      const res = await ensureStudentProfile();
-      setIsAuthed(res.ok);
+      setIsAuthed(true);
       setAuthChecked(true);
-      if (res.ok) await load();
+      await load();
     })();
 
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (isDemoAuthed()) {
-        setIsAuthed(true);
-        setAuthChecked(true);
-        await load();
-        return;
-      }
-
-      if (!session?.user) {
-        setIsAuthed(false);
-        setAuthChecked(true);
-        return;
-      }
-      const res = await ensureStudentProfile();
-      setIsAuthed(res.ok);
-      setAuthChecked(true);
-      if (res.ok) await load();
-    });
-
-    return () => subscription.subscription.unsubscribe();
+    return;
   }, []);
 
   const favoriteSet = useMemo(() => new Set(favoriteIds), [favoriteIds]);
@@ -142,8 +90,9 @@ export function FollowingPage() {
     return (
       <LoginScreen
         onAuthed={async () => {
+          const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
+          if (!me?.ok || !me?.user?.id) return;
           setIsAuthed(true);
-          setAuthChecked(true);
           await load();
         }}
       />

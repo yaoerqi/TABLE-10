@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export function Item3DViewer({
   modelGlbUrl,
@@ -11,6 +11,7 @@ export function Item3DViewer({
 }) {
   const [loaded, setLoaded] = useState(false);
   const [viewerReady, setViewerReady] = useState(false);
+  const mvRef = useRef<HTMLElement | null>(null);
 
   const poster = useMemo(() => {
     return posterUrl || "";
@@ -35,6 +36,25 @@ export function Item3DViewer({
     };
   }, []);
 
+  // React's onLoad on custom elements is unreliable; use the native `load` event.
+  useEffect(() => {
+    const el = mvRef.current as HTMLElement & { loaded?: boolean } | null;
+    if (!el || !viewerReady) return;
+
+    const markLoaded = () => setLoaded(true);
+    el.addEventListener("load", markLoaded);
+    el.addEventListener("error", markLoaded);
+
+    queueMicrotask(() => {
+      if (el.loaded) markLoaded();
+    });
+
+    return () => {
+      el.removeEventListener("load", markLoaded);
+      el.removeEventListener("error", markLoaded);
+    };
+  }, [modelGlbUrl, viewerReady]);
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-card">
       <div className="mb-2 flex items-center justify-between">
@@ -44,14 +64,14 @@ export function Item3DViewer({
 
       <div className="relative overflow-hidden rounded-2xl bg-slate-50">
         {!viewerReady ? (
-          <div className="absolute inset-0 grid place-items-center">
-            <div className="rounded-full bg-white/80 px-4 py-2 text-xs text-slate-600 shadow-sm">
+          <div className="absolute inset-0 z-20 grid place-items-center bg-slate-50/90">
+            <div className="rounded-full bg-white/90 px-4 py-2 text-xs text-slate-600 shadow-sm">
               Initializing viewer...
             </div>
           </div>
         ) : !loaded ? (
-          <div className="absolute inset-0 grid place-items-center">
-            <div className="rounded-full bg-white/80 px-4 py-2 text-xs text-slate-600 shadow-sm">
+          <div className="absolute inset-0 z-20 grid place-items-center bg-slate-50/90">
+            <div className="rounded-full bg-white/90 px-4 py-2 text-xs text-slate-600 shadow-sm">
               Loading 3D model...
             </div>
           </div>
@@ -59,13 +79,15 @@ export function Item3DViewer({
 
         {viewerReady ? (
           <model-viewer
+            ref={(node: HTMLElement | null) => {
+              mvRef.current = node;
+            }}
             src={modelGlbUrl}
             poster={poster}
             ar
             camera-controls
             touch-action="pan-y"
             style={{ width: "100%", height: "360px" }}
-            onLoad={() => setLoaded(true)}
           />
         ) : (
           <div style={{ width: "100%", height: "360px" }} />

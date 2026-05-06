@@ -1,22 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getSessionAccountId } from "@/lib/server/session";
 
 export const runtime = "nodejs";
-
-function getBearerToken(headers: Headers) {
-  const auth = headers.get("authorization") || headers.get("Authorization");
-  if (!auth) return null;
-  const parts = auth.split(" ");
-  if (parts.length !== 2) return null;
-  if (parts[0].toLowerCase() !== "bearer") return null;
-  return parts[1];
-}
 
 export async function GET(request: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const REALI3_API_KEY = process.env.REALI3_API_KEY;
+  const meshyApiKey = process.env.MESHY_API_KEY;
 
   if (!supabaseUrl || !anonKey || !serviceRoleKey) {
     return NextResponse.json(
@@ -24,8 +16,8 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
-  if (!REALI3_API_KEY) {
-    return NextResponse.json({ error: "Missing REALI3_API_KEY" }, { status: 500 });
+  if (!meshyApiKey) {
+    return NextResponse.json({ error: "Missing MESHY_API_KEY" }, { status: 500 });
   }
 
   const url = new URL(request.url);
@@ -34,31 +26,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Missing itemId" }, { status: 400 });
   }
 
-  // ---- Auth (optional, but recommended) ----
-  // If Authorization is provided, we verify the caller is the seller owner.
-  const token = getBearerToken(request.headers);
+  // ---- Auth (cookie session) ----
+  const accountId = await getSessionAccountId();
+  if (!accountId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const supabaseAnon = createClient(supabaseUrl, anonKey);
-
-  if (token) {
-    const {
-      data: { user },
-      error: authError
-    } = await supabaseAnon.auth.getUser(token);
-    if (authError || !user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const { data: itemRow, error: itemFetchError } = await supabaseAnon
-      .from("items")
-      .select("seller_id")
-      .eq("id", itemId)
-      .maybeSingle();
-    if (itemFetchError || !itemRow) {
-      return NextResponse.json({ error: "Item not found" }, { status: 404 });
-    }
-    if (itemRow.seller_id !== user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+  const { data: itemRow, error: itemFetchError } = await supabaseAnon
+    .from("items")
+    .select("seller_id")
+    .eq("id", itemId)
+    .maybeSingle();
+  if (itemFetchError || !itemRow) {
+    return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  }
+  if (itemRow.seller_id !== accountId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   // ---- Admin client to update DB + upload model ----
@@ -67,7 +48,7 @@ export async function GET(request: Request) {
 
   const { data: item, error: itemError } = await supabaseAdmin
     .from("items")
-    .select("id,3d_job_id,3d_status")
+    .select("id,3d_job_id,3d_status,model_glb_url")
     .eq("id", itemId)
     .maybeSingle();
 
@@ -76,46 +57,71 @@ export async function GET(request: Request) {
   }
 
   const jobId = item["3d_job_id"];
-  if (!jobId) {
-    return NextResponse.json({ error: "Missing 3d_job_id" }, { status: 400 });
+  const viewerGlbUrl = `/api/items/${itemId}/model-glb`;
+
+  if (item["3d_status"] === "completed" && jobId) {
+    if (item.model_glb_url !== viewerGlbUrl) {
+      await supabaseAdmin.from("items").update({ model_glb_url: viewerGlbUrl }).eq("id", itemId);
+    }
+    return NextResponse.json({
+      ok: true,
+      itemId,
+      jobId,
+      status: "completed" as const,
+      modelGlbUrl: viewerGlbUrl,
+      provider: "meshy"
+    });
   }
 
-  // ---- Poll Reali3 status ----
-  // Docs indicate tracking via reconstruction id endpoints.
-  const statusResp = await fetch(`https://api.reali3.net/v1/reconstruction/${jobId}`, {
-    headers: { Authorization: `Bearer ${REALI3_API_KEY}` }
+  if (!jobId) {
+    return NextResponse.json(
+      {
+        error:
+          "还没有 Meshy 任务 ID（数据库里缺少 3d_job_id）。请先在创建任务成功后刷新；如果创建失败，需要先点『重试创建 3D 任务』（或重新发布并勾选 3D）。你也可以先执行 migrations 补齐 items 的 3d 字段。",
+        code: "missing_3d_job_id",
+        itemId
+      },
+      { status: 409 }
+    );
+  }
+
+  // ---- Poll Meshy Image -> 3D status ----
+  const statusResp = await fetch(`https://api.meshy.ai/openapi/v1/image-to-3d/${jobId}`, {
+    headers: { Authorization: `Bearer ${meshyApiKey}` }
   });
 
+  const statusJson: any = await statusResp.json().catch(() => ({}));
   if (!statusResp.ok) {
-    const text = await statusResp.text().catch(() => "");
     return NextResponse.json(
-      { error: "Failed to fetch Reali3 status", details: text },
+      { error: "Failed to fetch Meshy status", status: statusResp.status, details: statusJson },
       { status: 502 }
     );
   }
 
-  const statusJson: any = await statusResp.json().catch(() => ({}));
-  const remoteStatus: string =
-    statusJson.status || statusJson.state || statusJson.phase || "";
+  const remoteStatus: string = (statusJson.status ?? "").toString();
 
   // Normalize remote statuses to our DB statuses.
   let nextStatus: "pending" | "processing" | "completed" | "failed" = "processing";
-  const s = remoteStatus.toLowerCase();
-  if (s.includes("complete") || s.includes("success") || s === "done") nextStatus = "completed";
-  if (s.includes("fail") || s.includes("error")) nextStatus = "failed";
-  if (s.includes("pending") || s.includes("queued")) nextStatus = "pending";
+  if (remoteStatus === "PENDING") nextStatus = "pending";
+  if (remoteStatus === "IN_PROGRESS") nextStatus = "processing";
+  if (remoteStatus === "FAILED") nextStatus = "failed";
+  if (remoteStatus === "SUCCEEDED") nextStatus = "completed";
 
   // If completed, download GLB and upload it.
   if (nextStatus === "completed") {
-    const downloadResp = await fetch(
-      `https://api.reali3.net/v1/reconstruction/${jobId}/download/glb`,
-      { headers: { Authorization: `Bearer ${REALI3_API_KEY}` } }
-    );
+    const glbUrl = statusJson?.model_urls?.glb;
+    if (!glbUrl || typeof glbUrl !== "string") {
+      return NextResponse.json(
+        { error: "Meshy task succeeded but model_urls.glb missing", details: statusJson },
+        { status: 502 }
+      );
+    }
 
+    const downloadResp = await fetch(glbUrl);
     if (!downloadResp.ok) {
       const text = await downloadResp.text().catch(() => "");
       return NextResponse.json(
-        { error: "Failed to download GLB", details: text },
+        { error: "Failed to download GLB from Meshy", details: text },
         { status: 502 }
       );
     }
@@ -137,14 +143,11 @@ export async function GET(request: Request) {
       );
     }
 
-    const { data: publicUrlData } = supabaseAdmin.storage.from(bucket).getPublicUrl(modelPath);
-    const modelGlbUrl = publicUrlData.publicUrl;
-
     const { error: updateError } = await supabaseAdmin
       .from("items")
       .update({
         "3d_status": "completed",
-        model_glb_url: modelGlbUrl
+        model_glb_url: viewerGlbUrl
       })
       .eq("id", itemId);
 
@@ -160,7 +163,8 @@ export async function GET(request: Request) {
       itemId,
       jobId,
       status: "completed",
-      modelGlbUrl
+      modelGlbUrl: viewerGlbUrl,
+      provider: "meshy"
     });
   }
 
@@ -177,7 +181,9 @@ export async function GET(request: Request) {
     itemId,
     jobId,
     status: nextStatus,
-    remote: remoteStatus
+    remote: remoteStatus,
+    provider: "meshy",
+    progress: typeof statusJson.progress === "number" ? statusJson.progress : undefined
   });
 }
 
