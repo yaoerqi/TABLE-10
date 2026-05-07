@@ -187,7 +187,7 @@ curl -s -X POST http://localhost:3000/api/search \
 
 ## Live2D Model Assets
 
-Live2D is wired in the assistant area; models are not bundled by default. Copy your Live2D `public/models` tree into this repo’s `public/models` if you want the avatar to render.
+The repo ships **one** Cubism model under **`public/models/Haru/`** (used by `/assistant` and the desktop pet). To use a different character, replace or add a folder and point `Live2DDisplay`’s `modelPath` at its `.model3.json`.
 
 ## 3D Image → GLB (Meshy)
 
@@ -212,7 +212,7 @@ Schema includes `chat_threads` / `chat_messages`. The app exposes APIs to open a
    Covers load from `images_array[0]` via **`GET /api/items/[id]/card-image`**. For private buckets, ensure `SUPABASE_SERVICE_ROLE_KEY` is set so the route can sign or stream the file.
 
 4. **`/assistant` Live2D empty**  
-   Add model assets under `public/models` as documented above.
+   Confirm `public/models/Haru/Haru.model3.json` exists and `/vendor/live2dcubismcore.js` loads (see root layout).
 
 5. **Desktop pet search fails**  
    Next.js must be running; pet should target `/api/search`. Send `{ "query": "...", "locale": "en" | "zh" }` if you want localized titles in the response.
