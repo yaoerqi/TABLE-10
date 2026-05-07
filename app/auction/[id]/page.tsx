@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Clock } from "lucide-react";
 import { BottomNav } from "@/components/navigation/BottomNav";
+import { useLocale } from "@/components/providers/LocaleProvider";
 import { hasSupabaseEnv } from "@/lib/supabase/client";
 import { AUCTION_POLL_MS, MAX_AUCTION_BREACH } from "@/lib/auction";
 import {
@@ -14,6 +15,7 @@ import {
 } from "@/lib/mock/auctionSeed";
 import { firstItemImageUrl } from "@/lib/itemImages";
 import type { DbItem } from "@/lib/supabase/types";
+import { formatAuctionRemaining } from "@/lib/i18n/formatAuctionRemaining";
 
 type BidRow = {
   id: string;
@@ -36,20 +38,8 @@ type AuctionPayload = {
   error?: string;
 };
 
-function formatRemaining(ms: number): string {
-  if (ms <= 0) return "已结束";
-  const s = Math.floor(ms / 1000);
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (d > 0) return `${d}天 ${h}小时 ${m}分`;
-  if (h > 0) return `${h}小时 ${m}分 ${sec}秒`;
-  if (m > 0) return `${m}分 ${sec}秒`;
-  return `${sec}秒`;
-}
-
 function AuctionCountdown({ endIso }: { endIso: string | null }) {
+  const { t, locale } = useLocale();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -59,9 +49,9 @@ function AuctionCountdown({ endIso }: { endIso: string | null }) {
 
   const msLeft = useMemo(() => {
     if (!endIso) return 0;
-    const t = Date.parse(endIso);
-    if (!Number.isFinite(t)) return 0;
-    return t - now;
+    const endMs = Date.parse(endIso);
+    if (!Number.isFinite(endMs)) return 0;
+    return endMs - now;
   }, [endIso, now]);
 
   const ended = msLeft <= 0;
@@ -74,12 +64,17 @@ function AuctionCountdown({ endIso }: { endIso: string | null }) {
       ].join(" ")}
     >
       <Clock className="h-4 w-4 shrink-0" />
-      <span>{ended ? "拍卖已结束" : `剩余 ${formatRemaining(msLeft)}`}</span>
+      <span>
+        {ended
+          ? t("auction.countdownEnded")
+          : t("auction.timeRemaining", { time: formatAuctionRemaining(msLeft, locale) })}
+      </span>
     </div>
   );
 }
 
 export default function AuctionDetailPage() {
+  const { t, locale } = useLocale();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const itemId = (params?.id ?? "").toString();
@@ -99,14 +94,14 @@ export default function AuctionDetailPage() {
   const [isSeed, setIsSeed] = useState(false);
 
   const loadSeed = useCallback(() => {
-    const row = getSeedAuctionItem();
+    const row = getSeedAuctionItem(locale);
     setItem(row);
     setMinNext(
       row.auction_current_price != null
         ? Number(row.auction_current_price) + Number(row.auction_step ?? 1)
         : Number(row.auction_start_price ?? row.price)
     );
-    setBids(getSeedAuctionBids());
+    setBids(getSeedAuctionBids(locale));
     const end = row.auction_end_at ? Date.parse(String(row.auction_end_at)) : 0;
     setEnded(!Number.isFinite(end) || end <= Date.now());
     setIsSeed(true);
@@ -119,7 +114,7 @@ export default function AuctionDetailPage() {
         if (Number.isFinite(b)) setBreachCount(b);
       })
       .catch(() => {});
-  }, []);
+  }, [locale]);
 
   const refreshAuction = useCallback(async () => {
     if (!itemId || isSeedAuctionItemId(itemId)) return;
@@ -128,7 +123,7 @@ export default function AuctionDetailPage() {
     });
     const json = (await resp.json().catch(() => ({}))) as AuctionPayload;
     if (!resp.ok || !json.ok || !json.item) {
-      setErrorText(json.error ?? "加载失败");
+      setErrorText(json.error ?? t("common.loadFailed"));
       return;
     }
     const it = json.item as DbItem;
@@ -145,11 +140,11 @@ export default function AuctionDetailPage() {
         : ""
     );
     setErrorText("");
-  }, [itemId]);
+  }, [itemId, t]);
 
   useEffect(() => {
     if (!itemId) {
-      setErrorText("缺少商品 ID");
+      setErrorText(t("common.missingProductId"));
       setLoading(false);
       return;
     }
@@ -158,13 +153,13 @@ export default function AuctionDetailPage() {
       return;
     }
     if (!hasSupabaseEnv) {
-      setErrorText("未配置 Supabase 环境变量");
+      setErrorText(t("common.supabaseNotConfigured"));
       setLoading(false);
       return;
     }
     setLoading(true);
     void refreshAuction().finally(() => setLoading(false));
-  }, [itemId, loadSeed, refreshAuction]);
+  }, [itemId, loadSeed, refreshAuction, t]);
 
   useEffect(() => {
     if (!itemId || isSeedAuctionItemId(itemId)) return;
@@ -187,12 +182,12 @@ export default function AuctionDetailPage() {
   const onBid = async () => {
     setBidHint("");
     if (isSeed) {
-      setBidHint("演示商品无法真实出价，请发布真实拍卖商品体验。");
+      setBidHint(t("auction.seedNoBid"));
       return;
     }
     const n = Number(bidDraft.replace(/,/g, ""));
     if (!Number.isFinite(n) || n <= 0) {
-      setBidHint("请输入有效金额");
+      setBidHint(t("auction.invalidAmount"));
       return;
     }
     setBidBusy(true);
@@ -208,11 +203,11 @@ export default function AuctionDetailPage() {
     };
     setBidBusy(false);
     if (!resp.ok || !json.ok) {
-      setBidHint(json.error ?? "出价失败");
+      setBidHint(json.error ?? t("auction.bidFailed"));
       if (json.min != null) setBidDraft(Number(json.min).toFixed(2));
       return;
     }
-    setBidHint("出价成功！");
+    setBidHint(t("auction.bidOk"));
     await refreshAuction();
   };
 
@@ -240,11 +235,11 @@ export default function AuctionDetailPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Link href="/?top=auction&tab=recommend" className="text-sm font-semibold text-gray-600 hover:text-gray-900">
-          拍卖大厅
+          {t("auction.hall")}
         </Link>
       </header>
 
-      {loading ? <p className="mt-6 text-sm text-gray-500">加载中…</p> : null}
+      {loading ? <p className="mt-6 text-sm text-gray-500">{t("auction.loading")}</p> : null}
       {errorText ? <p className="mt-4 text-sm text-red-600">{errorText}</p> : null}
 
       {item ? (
@@ -258,38 +253,38 @@ export default function AuctionDetailPage() {
 
               <div className="grid gap-3 rounded-2xl bg-slate-50 p-4 text-sm">
                 <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">起拍价</span>
+                  <span className="text-slate-500">{t("auction.startPrice")}</span>
                   <span className="font-bold tabular-nums text-slate-900">
                     ￥{Number(item.auction_start_price ?? item.price).toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">当前价</span>
+                  <span className="text-slate-500">{t("auction.currentPrice")}</span>
                   <span className="font-extrabold tabular-nums text-indigo-700">
                     {item.auction_current_price != null
                       ? `￥${Number(item.auction_current_price).toFixed(2)}`
-                      : "尚无出价"}
+                      : t("auction.noBidsYet")}
                   </span>
                 </div>
                 <div className="flex justify-between gap-3">
-                  <span className="text-slate-500">加价幅度</span>
+                  <span className="text-slate-500">{t("auction.bidStep")}</span>
                   <span className="font-semibold tabular-nums text-slate-900">
                     ￥{Number(item.auction_step ?? 1).toFixed(2)}
                   </span>
                 </div>
                 <div className="flex justify-between gap-3 border-t border-slate-200 pt-3">
-                  <span className="text-slate-500">下次出价至少</span>
+                  <span className="text-slate-500">{t("auction.minNextBid")}</span>
                   <span className="font-bold tabular-nums text-emerald-700">￥{minNext.toFixed(2)}</span>
                 </div>
               </div>
 
               {reputationBlocked ? (
                 <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  你的历史拍卖违约次数过多（{breachCount}/{maxBreach}），暂时无法出价。如有疑问请联系客服申诉。
+                  {t("auction.breachNotice", { breach: breachCount, max: maxBreach })}
                 </p>
               ) : null}
               {isSeller ? (
-                <p className="text-xs text-slate-500">你是卖家，无需对自己的拍卖出价。</p>
+                <p className="text-xs text-slate-500">{t("auction.sellerNote")}</p>
               ) : null}
 
               <div className="flex gap-2">
@@ -300,7 +295,7 @@ export default function AuctionDetailPage() {
                   value={bidDraft}
                   onChange={(e) => setBidDraft(e.target.value)}
                   disabled={!canBid || bidBusy}
-                  placeholder={`最低 ￥${minNext.toFixed(2)}`}
+                  placeholder={t("auction.minBidPlaceholder", { min: minNext.toFixed(2) })}
                   className="h-12 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm font-semibold tabular-nums outline-none ring-indigo-200 focus:ring-2 disabled:bg-slate-100"
                 />
                 <button
@@ -309,7 +304,7 @@ export default function AuctionDetailPage() {
                   onClick={() => void onBid()}
                   className="h-12 shrink-0 rounded-xl bg-black px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {ended ? "已结束" : bidBusy ? "提交中…" : "出价"}
+                  {ended ? t("auction.ended") : bidBusy ? t("auction.submitting") : t("auction.placeBid")}
                 </button>
               </div>
               {bidHint ? <p className="text-xs text-slate-600">{bidHint}</p> : null}
@@ -317,11 +312,13 @@ export default function AuctionDetailPage() {
           </section>
 
           <section className="mt-6 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-bold text-slate-900">出价记录</h2>
-            <p className="mt-1 text-[11px] text-slate-500">页面每 {AUCTION_POLL_MS / 1000}s 自动刷新当前价与列表（演示种子除外）。</p>
+            <h2 className="text-base font-bold text-slate-900">{t("auction.bidLog")}</h2>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {t("auction.bidLogPoll", { sec: AUCTION_POLL_MS / 1000 })}
+            </p>
             <ul className="mt-4 space-y-3">
               {bids.length === 0 ? (
-                <li className="text-sm text-slate-500">暂无出价</li>
+                <li className="text-sm text-slate-500">{t("auction.noBids")}</li>
               ) : (
                 bids.map((b) => (
                   <li
@@ -341,7 +338,7 @@ export default function AuctionDetailPage() {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-400">
-                        {new Date(b.created_at).toLocaleString("zh-CN", {
+                        {new Date(b.created_at).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
                           month: "numeric",
                           day: "numeric",
                           hour: "2-digit",

@@ -11,9 +11,11 @@ import {
   type WishForumDetail,
   type WishForumReply
 } from "@/lib/mock/wishlistForum";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 export default function WishDetailPage() {
   const router = useRouter();
+  const { t, locale } = useLocale();
   const params = useParams<{ id: string }>();
   const rawId = (params?.id ?? "").toString();
   const id = decodeURIComponent(rawId);
@@ -24,15 +26,15 @@ export default function WishDetailPage() {
 
   useEffect(() => {
     if (!id) {
-      setErrorText("缺少帖子 ID");
+      setErrorText(t("common.missingPostId"));
       setLoading(false);
       return;
     }
 
     if (id.startsWith("seed-wish-")) {
-      const d = getMockWishDetail(id);
+      const d = getMockWishDetail(id, locale);
       if (!d) {
-        setErrorText("帖子不存在");
+        setErrorText(t("wish.notFound"));
         setLoading(false);
         return;
       }
@@ -57,15 +59,19 @@ export default function WishDetailPage() {
         };
       };
       if (!resp.ok || !json.ok || !json.wish) {
-        setErrorText(json && typeof json === "object" && "error" in json ? String((json as any).error) : "加载失败");
+        setErrorText(
+          json && typeof json === "object" && "error" in json
+            ? String((json as any).error)
+            : t("common.loadFailed")
+        );
         setDetail(null);
         setLoading(false);
         return;
       }
-      setDetail(wishRowToDetail(json.wish));
+      setDetail(wishRowToDetail(json.wish, locale));
       setLoading(false);
     })();
-  }, [id]);
+  }, [id, locale, t]);
 
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 pb-28 pt-6 sm:px-6">
@@ -79,14 +85,14 @@ export default function WishDetailPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-slate-900">求购帖</p>
+          <p className="text-sm font-bold text-slate-900">{t("wish.postTitle")}</p>
           <Link href="/?top=wishlist" className="text-xs text-slate-500 hover:text-slate-800">
-            返回求购列表
+            {t("wish.backList")}
           </Link>
         </div>
       </header>
 
-      {loading ? <p className="mt-6 text-sm text-slate-500">加载中…</p> : null}
+      {loading ? <p className="mt-6 text-sm text-slate-500">{t("wish.loading")}</p> : null}
       {errorText && !loading ? <p className="mt-4 text-sm text-red-600">{errorText}</p> : null}
 
       {detail ? (
@@ -102,7 +108,7 @@ export default function WishDetailPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-2">
                     <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-semibold text-indigo-800">
-                      楼主
+                      {t("wish.opBadge")}
                     </span>
                     <span className="font-semibold text-slate-900">{detail.nickname}</span>
                     <span className="text-xs text-slate-400">{detail.timeLabel}</span>
@@ -124,7 +130,7 @@ export default function WishDetailPage() {
                 ))}
               </div>
               <p className="mt-4 text-lg font-extrabold text-indigo-700">
-                预算 ￥{Number(detail.budget).toFixed(0)}
+                {t("wish.budget", { n: Number(detail.budget).toFixed(0) })}
               </p>
             </div>
           </article>
@@ -133,9 +139,9 @@ export default function WishDetailPage() {
             <div className="mb-3 flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-slate-500" />
               <h2 className="text-base font-bold text-slate-900">
-                留言
+                {t("wish.repliesTitle")}
                 <span className="ml-2 text-sm font-normal text-slate-400">
-                  （{detail.replies.length} 条）
+                  {t("wish.replyCount", { n: detail.replies.length })}
                 </span>
               </h2>
             </div>

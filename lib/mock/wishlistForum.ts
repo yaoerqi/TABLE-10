@@ -1,5 +1,9 @@
 /** Forum-style wishlist cards for homepage「求购」demo + DB row mapping. */
 
+import type { Locale } from "@/lib/i18n/locale";
+import { DEFAULT_LOCALE } from "@/lib/i18n/locale";
+import { translate } from "@/lib/i18n/messages";
+
 export type WishForumReply = {
   id: string;
   nickname: string;
@@ -9,7 +13,7 @@ export type WishForumReply = {
 };
 
 export type WishForumDetail = WishForumPost & {
-  /** 楼主完整正文（详情页） */
+  /** Full OP body on detail page */
   body: string;
   replies: WishForumReply[];
 };
@@ -27,7 +31,7 @@ export type WishForumPost = {
   likes: number;
 };
 
-export const MOCK_WISH_FORUM_POSTS: WishForumPost[] = [
+export const MOCK_WISH_FORUM_POSTS_ZH: WishForumPost[] = [
   {
     id: "seed-wish-1",
     nickname: "北区小陈",
@@ -91,8 +95,77 @@ export const MOCK_WISH_FORUM_POSTS: WishForumPost[] = [
   }
 ];
 
-/** Demo thread replies under each seed post（详情页留言） */
-export const SEED_WISH_REPLIES: Record<string, WishForumReply[]> = {
+export const MOCK_WISH_FORUM_POSTS_EN: WishForumPost[] = [
+  {
+    id: "seed-wish-1",
+    nickname: "Chen (North quad)",
+    avatarUrl: "https://i.pravatar.cc/96?img=11",
+    title: "WTB Switch OLED + Ring Fit bundle",
+    excerpt:
+      "Prefer ≥90% condition; happy to inspect on campus. Console-only OK — Ring Fit can wait.",
+    budget: 2000,
+    tags: ["#Electronics", "#Games", "#Meetup"],
+    timeLabel: "2h ago",
+    replyCount: 14,
+    likes: 26
+  },
+  {
+    id: "seed-wish-2",
+    nickname: "ExamSeason",
+    avatarUrl: "https://i.pravatar.cc/96?img=33",
+    title: "Looking for Zhang Yu calculus set + past papers",
+    excerpt: "Prefer fewer notes. Meet at library or cafeteria gate; can stretch budget for legit workbook.",
+    budget: 80,
+    tags: ["#Books", "#GradSchool"],
+    timeLabel: "Yesterday 21:16",
+    replyCount: 8,
+    likes: 12
+  },
+  {
+    id: "seed-wish-3",
+    nickname: "DeadlineRunner",
+    avatarUrl: "https://i.pravatar.cc/96?img=52",
+    title: "Need silent mouse + flight-safe power bank",
+    excerpt:
+      "For late-night deadlines — Logitech Anywhere tier or similar; power bank must be airline-safe.",
+    budget: 350,
+    tags: ["#Electronics", "#Urgent"],
+    timeLabel: "5h ago",
+    replyCount: 6,
+    likes: 19
+  },
+  {
+    id: "seed-wish-4",
+    nickname: "OffCampus",
+    avatarUrl: "https://i.pravatar.cc/96?img=45",
+    title: "Seeking room / shared flat near East Gate",
+    excerpt: "Tight budget; OK with sublets from 3 months. Balcony a plus — no agents please.",
+    budget: 1200,
+    tags: ["#Housing", "#LongTerm"],
+    timeLabel: "3d ago",
+    replyCount: 31,
+    likes: 44
+  },
+  {
+    id: "seed-wish-5",
+    nickname: "DramaClubProps",
+    avatarUrl: "https://i.pravatar.cc/96?img=28",
+    title: "Rent / buy retro desk lamp & vintage phone prop",
+    excerpt: "Need ~2 weeks for end-of-term show; deposit OK; prefer warm vintage yellow.",
+    budget: 150,
+    tags: ["#Props", "#Rental"],
+    timeLabel: "1w ago",
+    replyCount: 5,
+    likes: 9
+  }
+];
+
+export function getMockWishForumPosts(locale: Locale = DEFAULT_LOCALE): WishForumPost[] {
+  return locale === "zh" ? MOCK_WISH_FORUM_POSTS_ZH : MOCK_WISH_FORUM_POSTS_EN;
+}
+
+/** Demo thread replies per seed post */
+export const SEED_WISH_REPLIES_ZH: Record<string, WishForumReply[]> = {
   "seed-wish-1": [
     {
       id: "r1-1",
@@ -189,40 +262,161 @@ export const SEED_WISH_REPLIES: Record<string, WishForumReply[]> = {
   ]
 };
 
-export function getMockWishDetail(id: string): WishForumDetail | null {
-  const post = MOCK_WISH_FORUM_POSTS.find((p) => p.id === id);
+export const SEED_WISH_REPLIES_EN: Record<string, WishForumReply[]> = {
+  "seed-wish-1": [
+    {
+      id: "r1-1",
+      nickname: "Mech Zhang",
+      avatarUrl: "https://i.pravatar.cc/96?img=5",
+      content: "JP OLED + Ring Fit, boxes included. Library gate Tuesday afternoon?",
+      timeLabel: "1h ago"
+    },
+    {
+      id: "r1-2",
+      nickname: "Newbie",
+      avatarUrl: "https://i.pravatar.cc/96?img=18",
+      content: "Any flex on price? I might sell console-only…",
+      timeLabel: "48m ago"
+    },
+    {
+      id: "r1-3",
+      nickname: "Chen (North quad)",
+      avatarUrl: "https://i.pravatar.cc/96?img=11",
+      content: "OP: Happy to inspect first — DM sent.",
+      timeLabel: "30m ago"
+    }
+  ],
+  "seed-wish-2": [
+    {
+      id: "r2-1",
+      nickname: "MathSenior",
+      avatarUrl: "https://i.pravatar.cc/96?img=44",
+      content: "Full last-year set, barely written in — slight curl on cover OK?",
+      timeLabel: "Yesterday 22:01"
+    },
+    {
+      id: "r2-2",
+      nickname: "ExamSeason",
+      avatarUrl: "https://i.pravatar.cc/96?img=33",
+      content: "Works for me! Thu noon at Building A?",
+      timeLabel: "Yesterday 22:18"
+    }
+  ],
+  "seed-wish-3": [
+    {
+      id: "r3-1",
+      nickname: "GadgetStall",
+      avatarUrl: "https://i.pravatar.cc/96?img=60",
+      content: "MX Master 3 ~90% new; Xiaomi 20k bank is flight-safe.",
+      timeLabel: "3h ago"
+    },
+    {
+      id: "r3-2",
+      nickname: "DeadlineRunner",
+      avatarUrl: "https://i.pravatar.cc/96?img=52",
+      content: "Both together — price? Dorm East-7.",
+      timeLabel: "2h ago"
+    },
+    {
+      id: "r3-3",
+      nickname: "GadgetStall",
+      avatarUrl: "https://i.pravatar.cc/96?img=60",
+      content: "DM me～",
+      timeLabel: "1h ago"
+    }
+  ],
+  "seed-wish-4": [
+    {
+      id: "r4-1",
+      nickname: "EastGateHost",
+      avatarUrl: "https://i.pravatar.cc/96?img=8",
+      content: "Shared room opens next week — long-term only, not an agent.",
+      timeLabel: "2d ago"
+    },
+    {
+      id: "r4-2",
+      nickname: "AlumniSublet",
+      avatarUrl: "https://i.pravatar.cc/96?img=37",
+      content: "Moving next month — need a 2-week bridge?",
+      timeLabel: "1d ago"
+    }
+  ],
+  "seed-wish-5": [
+    {
+      id: "r5-1",
+      nickname: "DesignSenior",
+      avatarUrl: "https://i.pravatar.cc/96?img=24",
+      content: "Club might have that lamp — I’ll ask storage Monday.",
+      timeLabel: "6d ago"
+    },
+    {
+      id: "r5-2",
+      nickname: "DramaClubProps",
+      avatarUrl: "https://i.pravatar.cc/96?img=28",
+      content: "Thanks! Drama dept may lend the phone prop too～",
+      timeLabel: "5d ago"
+    }
+  ]
+};
+
+export function getSeedWishReplies(locale: Locale): Record<string, WishForumReply[]> {
+  return locale === "zh" ? SEED_WISH_REPLIES_ZH : SEED_WISH_REPLIES_EN;
+}
+
+export function getMockWishDetail(id: string, locale: Locale = DEFAULT_LOCALE): WishForumDetail | null {
+  const posts = getMockWishForumPosts(locale);
+  const post = posts.find((p) => p.id === id);
   if (!post) return null;
-  const replies = SEED_WISH_REPLIES[id] ?? [];
-  const body = `${post.excerpt}\n\n欢迎带图带价留言；鸽子勿扰，确定意向后再约时间面交。`;
+  const replies = getSeedWishReplies(locale)[id] ?? [];
+  const body = `${post.excerpt}\n\n${translate(locale, "wish.seedBodySuffix")}`;
   return { ...post, body, replies };
 }
 
-/** 数据库暂无留言表时，用稳定伪留言演示详情页 */
-export function buildSyntheticReplies(wishId: string): WishForumReply[] {
+/** Legacy export name */
+export const MOCK_WISH_FORUM_POSTS = MOCK_WISH_FORUM_POSTS_ZH;
+
+export function buildSyntheticReplies(wishId: string, locale: Locale = DEFAULT_LOCALE): WishForumReply[] {
   const h = hashStable(wishId);
-  const nick = (i: number) => `同学_${String((h + i * 131) % 997).padStart(3, "0")}`;
+  const nick = (i: number) =>
+    `${translate(locale, "wish.mapNicknamePrefix")}${String((h + i * 131) % 997).padStart(3, "0")}`;
   const av = (i: number) => `https://i.pravatar.cc/96?img=${1 + ((h + i * 7) % 69)}`;
+  const lines =
+    locale === "zh"
+      ? [
+          "我有符合条件的，可以哪天校内当面看一下吗？",
+          "价格还可以商量吗？我只有周末有空～",
+          "蹲一下，同求类似的～"
+        ]
+      : [
+          "I might have this — when can we meet on campus?",
+          "Any room on price? Weekends only for me～",
+          "Following — looking for something similar～"
+        ];
+  const times =
+    locale === "zh"
+      ? ["32 分钟前", "1 小时前", "昨天"]
+      : ["32m ago", "1h ago", "Yesterday"];
   return [
     {
       id: `${wishId}-s1`,
       nickname: nick(1),
       avatarUrl: av(1),
-      content: "我有符合条件的，可以哪天校内当面看一下吗？",
-      timeLabel: "32 分钟前"
+      content: lines[0],
+      timeLabel: times[0]
     },
     {
       id: `${wishId}-s2`,
       nickname: nick(2),
       avatarUrl: av(2),
-      content: "价格还可以商量吗？我只有周末有空～",
-      timeLabel: "1 小时前"
+      content: lines[1],
+      timeLabel: times[1]
     },
     {
       id: `${wishId}-s3`,
       nickname: nick(3),
       avatarUrl: av(3),
-      content: "蹲一下，同求类似的～",
-      timeLabel: "昨天"
+      content: lines[2],
+      timeLabel: times[2]
     }
   ];
 }
@@ -235,56 +429,70 @@ function hashStable(s: string): number {
   return Math.abs(h);
 }
 
-export function timeAgoFromIso(iso?: string | null): string {
-  if (!iso) return "刚刚";
+export function timeAgoFromIso(iso?: string | null, locale: Locale = DEFAULT_LOCALE): string {
+  if (!iso) return locale === "zh" ? "刚刚" : "Just now";
   const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "刚刚";
+  if (Number.isNaN(t)) return locale === "zh" ? "刚刚" : "Just now";
   const diff = Date.now() - t;
   const m = Math.floor(diff / 60000);
-  if (m < 1) return "刚刚";
-  if (m < 60) return `${m} 分钟前`;
+  if (m < 1) return locale === "zh" ? "刚刚" : "Just now";
+  if (m < 60) return locale === "zh" ? `${m} 分钟前` : `${m}m ago`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h} 小时前`;
+  if (h < 24) return locale === "zh" ? `${h} 小时前` : `${h}h ago`;
   const d = Math.floor(h / 24);
-  if (d < 7) return `${d} 天前`;
-  return new Date(iso).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
+  if (d < 7) return locale === "zh" ? `${d} 天前` : `${d}d ago`;
+  return new Date(iso).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+    month: "numeric",
+    day: "numeric"
+  });
 }
 
-export function wishRowToDetail(row: {
-  id: string;
-  buyer_id: string;
-  requested_item: string;
-  budget: number;
-  created_at?: string | null;
-}): WishForumDetail {
-  const card = mapWishlistRowToForumPost(row);
+export function wishRowToDetail(
+  row: {
+    id: string;
+    buyer_id: string;
+    requested_item: string;
+    budget: number;
+    created_at?: string | null;
+  },
+  locale: Locale = DEFAULT_LOCALE
+): WishForumDetail {
+  const card = mapWishlistRowToForumPost(row, locale);
   const budgetNum = Number(row.budget) || 0;
-  const body = `【求购】${row.requested_item}\n\n预算：￥${budgetNum.toFixed(0)}（可小幅商量）\n校内面交优先，欢迎留言联系～`;
+  const body = translate(locale, "wish.dbBody", {
+    title: row.requested_item,
+    budget: budgetNum.toFixed(0)
+  });
   return {
     ...card,
     body,
-    replies: buildSyntheticReplies(row.id)
+    replies: buildSyntheticReplies(row.id, locale)
   };
 }
 
-export function mapWishlistRowToForumPost(row: {
-  id: string;
-  buyer_id: string;
-  requested_item: string;
-  budget: number;
-  created_at?: string | null;
-}): WishForumPost {
+export function mapWishlistRowToForumPost(
+  row: {
+    id: string;
+    buyer_id: string;
+    requested_item: string;
+    budget: number;
+    created_at?: string | null;
+  },
+  locale: Locale = DEFAULT_LOCALE
+): WishForumPost {
   const h = hashStable(row.buyer_id);
   const img = 1 + (h % 69);
+  const prefix = translate(locale, "wish.mapNicknamePrefix");
+  const tag = locale === "zh" ? "#求购" : "#Wanted";
   return {
     id: row.id,
-    nickname: `求购_${String(h).slice(-4)}`,
+    nickname: `${prefix}${String(h).slice(-4)}`,
     avatarUrl: `https://i.pravatar.cc/96?img=${img}`,
     title: row.requested_item,
-    excerpt: "预算可小幅商量，校内面交优先，欢迎评论区留言或私聊联系～",
+    excerpt: translate(locale, "wish.mapExcerpt"),
     budget: Number(row.budget) || 0,
-    tags: ["#求购"],
-    timeLabel: timeAgoFromIso(row.created_at),
+    tags: [tag],
+    timeLabel: timeAgoFromIso(row.created_at, locale),
     replyCount: 3 + (h % 15),
     likes: 5 + (h % 28)
   };

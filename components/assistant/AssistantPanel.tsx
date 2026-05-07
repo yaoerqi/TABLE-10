@@ -4,12 +4,15 @@ import { useMemo, useRef, useState } from "react";
 import { Mic, Search } from "lucide-react";
 import { mockItems } from "@/lib/mock/items";
 import { searchItems } from "@/lib/assistant/search";
+import { demoListingLocation, demoListingTitle } from "@/lib/i18n/demoListing";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 export function AssistantPanel() {
   const [query, setQuery] = useState("");
   const [listening, setListening] = useState(false);
   const [lastQuery, setLastQuery] = useState("");
   const recognitionRef = useRef<any>(null);
+  const { locale } = useLocale();
 
   const { need, results } = useMemo(() => {
     if (!lastQuery) return { need: null as any, results: [] as any[] };
@@ -101,13 +104,19 @@ export function AssistantPanel() {
           {results.map(({ item, score }) => (
             <article key={item.id} className="rounded-2xl bg-white p-3">
               <div className="overflow-hidden rounded-2xl bg-gray-100">
-                <img src={item.imageUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
+                <img
+                  src={item.imageUrl}
+                  alt={demoListingTitle(item.id, locale)}
+                  className="aspect-[4/3] w-full object-cover"
+                />
               </div>
-              <h3 className="mt-3 line-clamp-2 text-sm font-medium text-gray-800">{item.title}</h3>
+              <h3 className="mt-3 line-clamp-2 text-sm font-medium text-gray-800">
+                {demoListingTitle(item.id, locale)}
+              </h3>
               <div className="mt-2 flex items-center justify-between">
                 <p className="text-lg font-bold text-black">${item.price.toFixed(2)}</p>
                 <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] text-gray-500">
-                  {item.meetupLocation}
+                  {demoListingLocation(item.id, locale)}
                 </span>
               </div>
               <p className="mt-2 text-[11px] text-gray-400">match score: {score}</p>

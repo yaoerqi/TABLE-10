@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut, Settings, ShieldCheck, UserRound } from "lucide-react";
 import { BottomNav } from "@/components/navigation/BottomNav";
+import { useLocale } from "@/components/providers/LocaleProvider";
+import { readStoredLocale } from "@/lib/i18n/locale";
+import { translate } from "@/lib/i18n/messages";
 import { hasSupabaseEnv, supabase } from "@/lib/supabase/client";
 import type { DbItem } from "@/lib/supabase/types";
 import { firstItemImageUrl } from "@/lib/itemImages";
@@ -13,9 +16,10 @@ type ProfileTab = "published" | "sold" | "bought";
 
 export default function ProfilePage() {
   const router = useRouter();
+  const { t } = useLocale();
   const [tab, setTab] = useState<ProfileTab>("published");
   const [loading, setLoading] = useState(true);
-  const [nickname, setNickname] = useState("同学");
+  const [nickname, setNickname] = useState("");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [credit, setCredit] = useState(680);
   const [items, setItems] = useState<DbItem[]>([]);
@@ -23,11 +27,11 @@ export default function ProfilePage() {
   const [errorText, setErrorText] = useState("");
 
   const creditLevel = useMemo(() => {
-    if (credit >= 760) return "极好";
-    if (credit >= 700) return "良好";
-    if (credit >= 650) return "一般";
-    return "待提升";
-  }, [credit]);
+    if (credit >= 760) return t("profile.creditExcellent");
+    if (credit >= 700) return t("profile.creditGood");
+    if (credit >= 650) return t("profile.creditFair");
+    return t("profile.creditNeedsWork");
+  }, [credit, t]);
 
   useEffect(() => {
     (async () => {
@@ -35,7 +39,7 @@ export default function ProfilePage() {
       setErrorText("");
 
       if (!hasSupabaseEnv) {
-        setErrorText("未配置 Supabase 环境变量");
+        setErrorText(translate(readStoredLocale(), "profile.supabaseNotConfigured"));
         setLoading(false);
         return;
       }
@@ -72,7 +76,7 @@ export default function ProfilePage() {
   }, [router]);
 
   const withdrawListing = async (itemId: string) => {
-    if (!confirm("确定下架该商品？下架后首页推荐将不再展示。")) return;
+    if (!confirm(t("profile.withdrawConfirm"))) return;
     setWithdrawingId(itemId);
     setErrorText("");
     try {
@@ -83,7 +87,7 @@ export default function ProfilePage() {
       });
       const json = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!resp.ok || !json.ok) {
-        setErrorText(json.error ? String(json.error) : "下架失败");
+        setErrorText(json.error ? String(json.error) : t("profile.withdrawFailed"));
         return;
       }
       setItems((prev) => prev.filter((x) => x.id !== itemId));
@@ -110,13 +114,13 @@ export default function ProfilePage() {
   return (
     <main className="mx-auto min-h-screen max-w-3xl px-4 pb-28 pt-6 sm:px-6">
       <header className="flex items-center justify-between">
-        <h1 className="text-lg font-bold text-slate-900">个人中心</h1>
+        <h1 className="text-lg font-bold text-slate-900">{t("profile.title")}</h1>
         <Link
           href="/settings"
           className="inline-flex items-center gap-2 rounded-full bg-white/70 px-3 py-2 text-xs font-semibold text-slate-800 backdrop-blur hover:bg-white"
         >
           <Settings className="h-4 w-4" />
-          设置
+          {t("profile.settings")}
         </Link>
       </header>
 
@@ -132,10 +136,12 @@ export default function ProfilePage() {
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-bold text-slate-900">{nickname}</p>
+            <p className="truncate text-base font-bold text-slate-900">
+              {nickname || t("profile.defaultNickname")}
+            </p>
             <div className="mt-1 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
               <ShieldCheck className="h-4 w-4" />
-              信用分 {credit} · {creditLevel}
+              {t("profile.creditLine", { credit, level: creditLevel })}
             </div>
           </div>
           <button
@@ -144,7 +150,7 @@ export default function ProfilePage() {
             className="inline-flex items-center gap-2 rounded-full bg-black px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-slate-900"
           >
             <LogOut className="h-4 w-4" />
-            退出
+            {t("profile.logout")}
           </button>
         </div>
       </section>
@@ -156,7 +162,7 @@ export default function ProfilePage() {
         >
           <span className="inline-flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 shrink-0" />
-            校内二手指南（面交半径、避雷、课余时段建议）
+            {t("profile.campusGuide")}
           </span>
           <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
         </Link>
@@ -165,24 +171,24 @@ export default function ProfilePage() {
       <section className="mt-5">
         <div className="inline-flex w-full rounded-full bg-gray-100 p-1">
           <button type="button" onClick={() => setTab("published")} className={tabClass(tab === "published")}>
-            我发布的
+            {t("profile.tabPublished")}
           </button>
           <button type="button" onClick={() => setTab("sold")} className={tabClass(tab === "sold")}>
-            我卖出的
+            {t("profile.tabSold")}
           </button>
           <button type="button" onClick={() => setTab("bought")} className={tabClass(tab === "bought")}>
-            我买到的
+            {t("profile.tabBought")}
           </button>
         </div>
 
         <div className="mt-4">
-          {loading ? <p className="text-sm text-gray-500">Loading...</p> : null}
+          {loading ? <p className="text-sm text-gray-500">{t("profile.loading")}</p> : null}
           {errorText ? <p className="text-sm text-red-600">{errorText}</p> : null}
 
           {tab !== "published" ? (
             <div className="rounded-3xl border border-white/30 bg-white/60 p-5 backdrop-blur-xl">
-              <p className="text-sm font-semibold text-slate-900">功能建设中</p>
-              <p className="mt-1 text-xs text-gray-500">后续可接入订单/成交记录，这里先预留结构。</p>
+              <p className="text-sm font-semibold text-slate-900">{t("profile.featureWIP")}</p>
+              <p className="mt-1 text-xs text-gray-500">{t("profile.featureWIPDesc")}</p>
             </div>
           ) : items.length ? (
             <div className="grid gap-3">
@@ -220,7 +226,7 @@ export default function ProfilePage() {
                       disabled={withdrawingId === it.id}
                       className="shrink-0 self-center rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-60"
                     >
-                      {withdrawingId === it.id ? "处理中…" : "下架"}
+                      {withdrawingId === it.id ? t("profile.processing") : t("profile.withdraw")}
                     </button>
                   </div>
                 );
@@ -228,13 +234,13 @@ export default function ProfilePage() {
             </div>
           ) : (
             <div className="rounded-3xl border border-white/30 bg-white/60 p-5 backdrop-blur-xl">
-              <p className="text-sm font-semibold text-slate-900">还没有发布记录</p>
-              <p className="mt-1 text-xs text-gray-500">去发布一个宝贝，开始你的校园闲置之旅。</p>
+              <p className="text-sm font-semibold text-slate-900">{t("profile.emptyPublished")}</p>
+              <p className="mt-1 text-xs text-gray-500">{t("profile.emptyPublishedDesc")}</p>
               <Link
                 href="/publish"
                 className="mt-4 inline-flex rounded-full bg-black px-4 py-2 text-xs font-semibold text-white"
               >
-                一键发布
+                {t("profile.publishNow")}
               </Link>
             </div>
           )}

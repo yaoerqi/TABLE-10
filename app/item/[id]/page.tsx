@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, Heart, MessageCircle, MapPin, Send } from "lucide-react";
@@ -10,13 +10,16 @@ import { hasSupabaseEnv } from "@/lib/supabase/client";
 import { bumpItemClick, isFavorited, toggleFavorite } from "@/lib/clientPrefs";
 import type { DbItem } from "@/lib/supabase/types";
 import { mockItems } from "@/lib/mock/items";
+import { demoListingLocation, demoListingTitle } from "@/lib/i18n/demoListing";
+import type { Locale } from "@/lib/i18n/locale";
 import { firstItemImageUrl } from "@/lib/itemImages";
 import { Item3DViewer } from "@/components/viewer/Item3DViewer";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 const SEED_PREFIX = "seed-";
 
 /** Homepage merges mock cards with id `seed-{mockId}` — they are not in Supabase. */
-function buildSeedItemDetail(itemId: string): DbItem | null {
+function buildSeedItemDetail(itemId: string, locale: Locale): DbItem | null {
   if (!itemId.startsWith(SEED_PREFIX)) return null;
   const rawId = itemId.slice(SEED_PREFIX.length);
   const m = mockItems.find((x) => x.id === rawId);
@@ -24,13 +27,12 @@ function buildSeedItemDetail(itemId: string): DbItem | null {
   return {
     id: itemId,
     seller_id: "seed-seller",
-    title: m.title,
-    description:
-      "【演示商品】这是首页推荐里的示例条目，用于浏览界面效果，并非真实用户发布。若要点「私聊卖家」，请打开同学发布的真实商品。",
+    title: demoListingTitle(m.id, locale),
+    description: "",
     price: m.price,
     category: m.category,
     images_array: [m.imageUrl],
-    meetup_location: m.meetupLocation,
+    meetup_location: demoListingLocation(m.id, locale),
     status: "available"
   };
 }
@@ -42,12 +44,8 @@ type Comment = {
   createdAt: string;
 };
 
-const demoComments: Comment[] = [
-  { id: "c1", user: "小王", content: "还在吗？可以小刀吗？", createdAt: "刚刚" },
-  { id: "c2", user: "小李", content: "宿舍楼下自提可以吗？", createdAt: "10 分钟前" }
-];
-
 export default function ItemDetailPage() {
+  const { t, locale } = useLocale();
   const router = useRouter();
   const params = useParams<{ id: string }>();
   const itemId = (params?.id ?? "").toString();
@@ -56,7 +54,32 @@ export default function ItemDetailPage() {
   const [errorText, setErrorText] = useState("");
   const [item, setItem] = useState<DbItem | null>(null);
   const [tick, setTick] = useState(0);
-  const [comments, setComments] = useState<Comment[]>(demoComments);
+  const seedDemoComments = useMemo<Comment[]>(
+    () => [
+      {
+        id: "c1",
+        user: t("item.demoComment1User"),
+        content: t("item.demoComment1"),
+        createdAt: t("item.demoComment1Time")
+      },
+      {
+        id: "c2",
+        user: t("item.demoComment2User"),
+        content: t("item.demoComment2"),
+        createdAt: t("item.demoComment2Time")
+      }
+    ],
+    [t]
+  );
+
+  const [comments, setComments] = useState<Comment[]>([]);
+
+  useEffect(() => {
+    setComments((prev) => {
+      const localOnly = prev.filter((c) => c.id.startsWith("local-"));
+      return [...seedDemoComments, ...localOnly];
+    });
+  }, [seedDemoComments]);
   const [draft, setDraft] = useState("");
 
   const liked = item ? isFavorited(item.id) : false;
@@ -68,12 +91,12 @@ export default function ItemDetailPage() {
   useEffect(() => {
     (async () => {
       if (!itemId) {
-        setErrorText("缺少 itemId");
+        setErrorText(t("common.missingItemId"));
         setLoading(false);
         return;
       }
 
-      const seedItem = buildSeedItemDetail(itemId);
+      const seedItem = buildSeedItemDetail(itemId, locale);
       if (seedItem) {
         setItem(seedItem);
         setErrorText("");
@@ -82,7 +105,7 @@ export default function ItemDetailPage() {
       }
 
       if (!hasSupabaseEnv) {
-        setErrorText("未配置 Supabase 环境变量");
+        setErrorText(t("common.supabaseNotConfigured"));
         setLoading(false);
         return;
       }
@@ -98,14 +121,14 @@ export default function ItemDetailPage() {
         error?: string;
       };
       if (!resp.ok || !json.ok || !json.item) {
-        setErrorText(json?.error ? String(json.error) : "加载失败");
+        setErrorText(json?.error ? String(json.error) : t("common.loadFailed"));
         setLoading(false);
         return;
       }
       setItem(json.item as DbItem);
       setLoading(false);
     })();
-  }, [itemId]);
+  }, [itemId, t, locale]);
 
   const onSend = () => {
     const text = draft.trim();
@@ -113,7 +136,12 @@ export default function ItemDetailPage() {
     setDraft("");
     setComments((c) => [
       ...c,
-      { id: `local-${Date.now()}`, user: "我", content: text, createdAt: "刚刚" }
+      {
+        id: `local-${Date.now()}`,
+        user: t("item.me"),
+        content: text,
+        createdAt: t("item.justNow")
+      }
     ]);
   };
 
@@ -132,7 +160,7 @@ export default function ItemDetailPage() {
     }
     const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
     if (!me?.ok || !me?.user?.id) {
-      setErrorText("请先登录后再私聊。");
+      setErrorText(t("item.loginToChat"));
       return;
     }
     const resp = await fetch("/api/dm/thread", {
@@ -142,12 +170,12 @@ export default function ItemDetailPage() {
     });
     const json = await resp.json().catch(() => ({}));
     if (!resp.ok) {
-      setErrorText(json?.error ? String(json.error) : "创建私聊失败");
+      setErrorText(json?.error ? String(json.error) : t("item.createDmFailed"));
       return;
     }
     setErrorText("");
     router.push(`/chat/${encodeURIComponent(String(json.threadId))}`);
-  }, [item, itemId, router]);
+  }, [item, itemId, router, t]);
 
   const heroFallback =
     "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1000&q=80";
@@ -179,11 +207,11 @@ export default function ItemDetailPage() {
           <ArrowLeft className="h-5 w-5" />
         </button>
         <Link href="/" className="text-sm font-semibold text-gray-600 hover:text-gray-900">
-          返回首页
+          {t("item.backHome")}
         </Link>
       </header>
 
-      {loading ? <p className="mt-6 text-sm text-gray-500">Loading...</p> : null}
+      {loading ? <p className="mt-6 text-sm text-gray-500">{t("item.loading")}</p> : null}
       {errorText ? <p className="mt-4 text-sm text-red-600">{errorText}</p> : null}
 
       <section className="mt-5 overflow-hidden rounded-3xl border border-white/30 bg-white/60 backdrop-blur-xl shadow-[0_16px_60px_-45px_rgba(0,0,0,0.35)]">
@@ -203,7 +231,7 @@ export default function ItemDetailPage() {
                 "absolute right-3 top-3 inline-flex h-10 w-10 items-center justify-center rounded-full backdrop-blur",
                 liked ? "bg-black/80 text-white" : "bg-white/80 text-gray-700"
               ].join(" ")}
-              aria-label={liked ? "取消收藏" : "收藏"}
+              aria-label={liked ? t("item.unfavorite") : t("item.favorite")}
             >
               <Heart className={liked ? "h-5 w-5 fill-current" : "h-5 w-5"} />
             </motion.button>
@@ -217,13 +245,13 @@ export default function ItemDetailPage() {
         ) : null}
 
         <div className="p-5">
-          <h1 className="text-lg font-bold text-slate-900">{item?.title ?? "演示宝贝（详情页占位）"}</h1>
+          <h1 className="text-lg font-bold text-slate-900">{item?.title ?? t("item.seedTitlePlaceholder")}</h1>
           <p className="mt-2 text-2xl font-extrabold text-slate-950">
             {item
               ? item.is_auction
                 ? item.auction_current_price != null
-                  ? `当前 ￥${Number(item.auction_current_price).toFixed(2)}`
-                  : `起拍 ￥${Number(item.auction_start_price ?? item.price).toFixed(2)}`
+                  ? t("item.priceCurrent", { p: Number(item.auction_current_price).toFixed(2) })
+                  : t("item.priceStart", { p: Number(item.auction_start_price ?? item.price).toFixed(2) })
                 : `$${Number(item.price).toFixed(2)}`
               : "$199.00"}
           </p>
@@ -232,30 +260,31 @@ export default function ItemDetailPage() {
               href={`/auction/${encodeURIComponent(itemId)}`}
               className="mt-2 inline-flex text-sm font-semibold text-rose-700 underline-offset-2 hover:underline"
             >
-              拍卖进行中 → 去出价
+              {t("item.goAuctionBid")}
             </Link>
           ) : null}
           <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700">
             <MapPin className="h-4 w-4" />
-            {item?.meetup_location ?? "校内自提"}
+            {item?.meetup_location ?? t("item.defaultMeetup")}
           </div>
           <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
-            {item?.description ??
-              "这里是宝贝详情页的占位内容。后续可以接入更多字段（成色、交易方式、发布时间等）。"}
+            {item && item.id.startsWith(SEED_PREFIX)
+              ? t("item.seedDescription")
+              : item?.description || t("item.placeholderDescription")}
           </p>
           <Link
             href="/campus"
             className="mt-3 inline-flex text-[12px] font-semibold text-indigo-700 underline underline-offset-2 hover:text-indigo-900"
           >
-            看一眼「校内交易小贴士」——建议公共场所面交，勿提前转账给陌生人。
+            {t("item.tipLink")}
           </Link>
         </div>
       </section>
 
       <section id="qa" className="mt-5 rounded-3xl border border-white/30 bg-white/60 p-5 backdrop-blur-xl shadow-[0_16px_60px_-45px_rgba(0,0,0,0.28)]">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-slate-900">留言问答</h2>
-          <span className="text-xs text-gray-500">{comments.length} 条</span>
+          <h2 className="text-base font-bold text-slate-900">{t("item.qaTitle")}</h2>
+          <span className="text-xs text-gray-500">{t("item.qaCount", { n: comments.length })}</span>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -274,7 +303,7 @@ export default function ItemDetailPage() {
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="问问更多细节：比如成色、可否小刀、能否自提..."
+            placeholder={t("item.commentPlaceholder")}
             className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none"
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
@@ -301,14 +330,14 @@ export default function ItemDetailPage() {
               className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-slate-950 text-sm font-semibold text-white hover:bg-slate-900"
             >
               <MessageCircle className="h-4 w-4" />
-              私聊卖家
+              {t("item.chatSeller")}
             </button>
             <button
               type="button"
               onClick={scrollToQa}
               className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 hover:bg-slate-50"
             >
-              公开留言
+              {t("item.publicComment")}
             </button>
           </div>
         </div>

@@ -1,3 +1,6 @@
+import type { Locale } from "@/lib/i18n/locale";
+import { DEFAULT_LOCALE } from "@/lib/i18n/locale";
+import { translate } from "@/lib/i18n/messages";
 import type { DbItem } from "@/lib/supabase/types";
 
 const SEED_AUCTION_ID = "seed-auction-demo";
@@ -15,15 +18,14 @@ export type AuctionBidRow = {
   avatar_url: string | null;
 };
 
-/** Local-only demo for首页「拍卖」种子卡片（无 Supabase 写入） */
-export function getSeedAuctionItem(): DbItem {
+/** Local-only demo seed card for the Auction tab (no Supabase writes). */
+export function getSeedAuctionItem(locale: Locale = DEFAULT_LOCALE): DbItem {
   const end = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
   return {
     id: SEED_AUCTION_ID,
     seller_id: "seed-seller",
-    title: "【演示拍卖】胶片相机 + 两卷胶卷",
-    description:
-      "【演示商品】这是拍卖 Tab 的示例条目，用于查看倒计时与出价界面。真实拍卖请发布含拍卖信息的商品。",
+    title: translate(locale, "demo.seedAuctionTitle"),
+    description: translate(locale, "demo.seedAuctionDesc"),
     price: 320,
     category: "数码",
     images_array: [
@@ -40,14 +42,14 @@ export function getSeedAuctionItem(): DbItem {
   };
 }
 
-export function getSeedAuctionBids(): AuctionBidRow[] {
+export function getSeedAuctionBids(locale: Locale = DEFAULT_LOCALE): AuctionBidRow[] {
   return [
     {
       id: "sb1",
       amount: 380,
       created_at: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
       bidder_id: "seed-bidder-demo",
-      nickname: "出价演示用户",
+      nickname: translate(locale, "demo.bidderDemo"),
       avatar_url: "https://i.pravatar.cc/96?img=11"
     },
     {
@@ -55,7 +57,7 @@ export function getSeedAuctionBids(): AuctionBidRow[] {
       amount: 360,
       created_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
       bidder_id: "u2",
-      nickname: "同学_042",
+      nickname: `${translate(locale, "demo.peerPrefix")}042`,
       avatar_url: "https://i.pravatar.cc/96?img=22"
     },
     {
@@ -63,7 +65,7 @@ export function getSeedAuctionBids(): AuctionBidRow[] {
       amount: 340,
       created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
       bidder_id: "u3",
-      nickname: "同学_108",
+      nickname: `${translate(locale, "demo.peerPrefix")}108`,
       avatar_url: "https://i.pravatar.cc/96?img=33"
     }
   ];

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Heart, MessageCircle, Search } from "lucide-react";
 import { motion } from "framer-motion";
@@ -10,7 +10,7 @@ import { supabase, hasSupabaseEnv } from "@/lib/supabase/client";
 import type { DbItem } from "@/lib/supabase/types";
 import { mockItems } from "@/lib/mock/items";
 import {
-  MOCK_WISH_FORUM_POSTS,
+  getMockWishForumPosts,
   mapWishlistRowToForumPost,
   type WishForumPost
 } from "@/lib/mock/wishlistForum";
@@ -33,6 +33,11 @@ import { CampusPickupChips } from "@/components/campus/CampusPickupChips";
 import { CampusSafetyBanner } from "@/components/campus/CampusSafetyBanner";
 import { firstItemImageUrl } from "@/lib/itemImages";
 import { getSeedAuctionItem } from "@/lib/mock/auctionSeed";
+import { useLocale } from "@/components/providers/LocaleProvider";
+import { categoryLabel } from "@/lib/i18n/categoryLabel";
+import { formatCompactCount } from "@/lib/i18n/formatCompact";
+import { DEFAULT_LOCALE } from "@/lib/i18n/locale";
+import { demoListingLocation, demoListingTitle } from "@/lib/i18n/demoListing";
 
 type UiCategory = (typeof ALL_CATEGORIES)[number];
 type HomeTopTab = "recommend" | "discover" | "wishlist" | "auction";
@@ -44,8 +49,6 @@ type WishlistRow = {
   budget: number;
   created_at?: string;
 };
-
-const campusHotTags = ["#考研资料", "#宿舍火锅", "#单车代步", "#急售", "#租房", "#转专业资料"];
 
 function hashStable(s: string): number {
   let h = 0;
@@ -78,26 +81,16 @@ function itemDetailPath(item: DbItem): string {
     : `/item/${encodeURIComponent(item.id)}`;
 }
 
-function formatCompactCount(n: number): string {
-  if (n >= 10000) {
-    const w = n / 10000;
-    const rounded = w >= 10 ? Math.round(w) : Math.round(w * 10) / 10;
-    return `${Number.isInteger(rounded) ? rounded : rounded.toFixed(1)}万`;
-  }
-  if (n >= 1000) {
-    const k = Math.round((n / 1000) * 10) / 10;
-    return `${Number.isInteger(k) ? k : k.toFixed(1)}千`;
-  }
-  return String(n);
-}
-
-function gridCardSellerRow(item: DbItem): { label: string; avatarUrl: string } {
+function gridCardSellerRow(
+  item: DbItem,
+  t: (key: string, vars?: Record<string, string | number>) => string
+): { label: string; avatarUrl: string } {
   const h = hashStable(item.seller_id);
   if (item.seller_id === "demo-seller") {
-    return { label: "校园摊主", avatarUrl: `https://i.pravatar.cc/96?img=${1 + (h % 69)}` };
+    return { label: t("home.sellerDemo"), avatarUrl: `https://i.pravatar.cc/96?img=${1 + (h % 69)}` };
   }
   return {
-    label: `同学_${String(h).slice(-3)}`,
+    label: t("home.sellerPeer", { id: String(h).slice(-3) }),
     avatarUrl: `https://i.pravatar.cc/96?img=${1 + (hashStable(item.id) % 69)}`
   };
 }
@@ -105,10 +98,13 @@ function gridCardSellerRow(item: DbItem): { label: string; avatarUrl: string } {
 export function Homepage() {
   const router = useRouter();
   const sp = useSearchParams();
+  const { t, locale } = useLocale();
 
   const [keyword, setKeyword] = useState("");
   const [items, setItems] = useState<DbItem[]>([]);
-  const [wishPosts, setWishPosts] = useState<WishForumPost[]>(MOCK_WISH_FORUM_POSTS);
+  const [wishPosts, setWishPosts] = useState<WishForumPost[]>(() =>
+    getMockWishForumPosts(DEFAULT_LOCALE)
+  );
   const [loading, setLoading] = useState(true);
   const [errorText, setErrorText] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
@@ -125,14 +121,12 @@ export function Homepage() {
     setCampusPickupZone(pickupZone);
   }, [pickupZone]);
 
-  const loadItems = async () => {
+  const loadItems = useCallback(async () => {
     if (!hasSupabaseEnv) {
-      setLoading(false);
-      setErrorText("未配置 Supabase 环境变量");
+      setErrorText(t("common.supabaseNotConfigured"));
       return;
     }
 
-    setLoading(true);
     setErrorText("");
     const resp = await fetch("/api/items").catch(() => null);
     const json = (await resp?.json().catch(() => null)) as null | { ok?: boolean; items?: any[]; error?: string };
@@ -148,25 +142,24 @@ export function Homepage() {
     const demoItems: DbItem[] = mockItems.map((m) => ({
       id: `seed-${m.id}`,
       seller_id: demoSellerId,
-      title: m.title,
+      title: demoListingTitle(m.id, locale),
       description: "",
       price: m.price,
       category: m.category,
       images_array: [m.imageUrl],
-      meetup_location: m.meetupLocation,
+      meetup_location: demoListingLocation(m.id, locale),
       status: "available"
     }));
 
-    const seedAuction = getSeedAuctionItem();
+    const seedAuction = getSeedAuctionItem(locale);
     // Always show seed demos first; append real listings when the DB has rows.
     const merged = rows.length
       ? [seedAuction, ...demoItems, ...rows]
       : [seedAuction, ...demoItems];
     setItems(merged);
-    setLoading(false);
-  };
+  }, [locale, t]);
 
-  const loadWishlist = async () => {
+  const loadWishlist = useCallback(async () => {
     if (!hasSupabaseEnv) return;
     const { data, error } = await supabase
       .from("wishlist")
@@ -174,9 +167,9 @@ export function Homepage() {
       .order("created_at", { ascending: false })
       .limit(30);
     const rows = (data ?? []) as WishlistRow[];
-    const mapped = rows.map(mapWishlistRowToForumPost);
-    setWishPosts([...MOCK_WISH_FORUM_POSTS, ...mapped]);
-  };
+    const mapped = rows.map((r) => mapWishlistRowToForumPost(r, locale));
+    setWishPosts([...getMockWishForumPosts(locale), ...mapped]);
+  }, [locale]);
 
   useEffect(() => {
     (async () => {
@@ -196,13 +189,21 @@ export function Homepage() {
       }
 
       setIsAuthed(true);
-      await Promise.all([loadItems(), loadWishlist()]);
-
       setAuthChecked(true);
     })();
-
-    return;
   }, []);
+
+  useEffect(() => {
+    if (!isAuthed || !hasSupabaseEnv) return;
+    let cancelled = false;
+    setLoading(true);
+    void Promise.all([loadItems(), loadWishlist()]).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthed, locale, loadItems, loadWishlist]);
 
   const activeTab = useMemo<FeedTab>(() => {
     const raw = sp.get("tab");
@@ -288,10 +289,22 @@ export function Homepage() {
     });
   }, [wishPosts, keyword]);
 
+  const hotTags = useMemo(
+    () => [
+      t("home.hotTag1"),
+      t("home.hotTag2"),
+      t("home.hotTag3"),
+      t("home.hotTag4"),
+      t("home.hotTag5"),
+      t("home.hotTag6")
+    ],
+    [t]
+  );
+
   if (!authChecked) {
     return (
       <main className="min-h-screen bg-white px-4 py-16">
-        <p className="text-center text-sm text-gray-500">Loading...</p>
+        <p className="text-center text-sm text-gray-500">{t("common.loading")}</p>
       </main>
     );
   }
@@ -303,10 +316,7 @@ export function Homepage() {
           const me = await fetch("/api/auth/me").then((r) => r.json()).catch(() => null);
           if (!me?.ok || !me?.user?.id) return;
           setIsAuthed(true);
-          setLoading(true);
           setErrorText("");
-          await Promise.all([loadItems(), loadWishlist()]);
-          setLoading(false);
         }}
       />
     );
@@ -324,7 +334,7 @@ export function Homepage() {
                   className="chip shrink-0"
                 >
                   <Heart className="h-4 w-4" />
-                  关注
+                  {t("home.follow")}
                 </button>
                 <button
                   type="button"
@@ -340,7 +350,7 @@ export function Homepage() {
                     topTab === "recommend" ? "chip-active" : ""
                   ].join(" ")}
                 >
-                  推荐
+                  {t("home.recommend")}
                 </button>
                 <button
                   type="button"
@@ -356,7 +366,7 @@ export function Homepage() {
                     topTab === "discover" ? "chip-active" : ""
                   ].join(" ")}
                 >
-                  发现
+                  {t("home.discover")}
                 </button>
                 <button
                   type="button"
@@ -372,7 +382,7 @@ export function Homepage() {
                     topTab === "wishlist" ? "chip-active" : ""
                   ].join(" ")}
                 >
-                  求购
+                  {t("home.wishlist")}
                 </button>
                 <button
                   type="button"
@@ -388,7 +398,7 @@ export function Homepage() {
                     topTab === "auction" ? "chip-active" : ""
                   ].join(" ")}
                 >
-                  拍卖
+                  {t("home.auction")}
                 </button>
               </div>
 
@@ -397,23 +407,23 @@ export function Homepage() {
                 <input
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
-                  placeholder="搜索你想要的，比如：手机 / 游戏 / 租房..."
+                  placeholder={t("home.searchPlaceholder")}
                   className="w-full bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none"
-                  aria-label="Search items"
+                  aria-label={t("home.searchPlaceholder")}
                 />
               </div>
 
               <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
-                <span className="shrink-0 text-xs font-semibold text-gray-600">校园热搜</span>
-                {campusHotTags.map((t) => (
+                <span className="shrink-0 text-xs font-semibold text-gray-600">{t("home.hotSearch")}</span>
+                {hotTags.map((tag) => (
                   <button
-                    key={t}
+                    key={tag}
                     type="button"
-                    onClick={() => setKeyword(t.replace(/^#/, ""))}
+                    onClick={() => setKeyword(tag.replace(/^#/, ""))}
                     className="chip shrink-0"
-                    aria-label={t}
+                    aria-label={tag}
                   >
-                    {t}
+                    {tag}
                   </button>
                 ))}
               </div>
@@ -429,7 +439,7 @@ export function Homepage() {
                     selectedCategory === null ? "chip-active" : ""
                   ].join(" ")}
                 >
-                  全部
+                  {t("home.all")}
                 </button>
                 {categoryOrder.visible.map((cat) => {
                   const isActive = cat === selectedCategory;
@@ -448,7 +458,7 @@ export function Homepage() {
                         isActive ? "chip-active" : ""
                       ].join(" ")}
                     >
-                      {cat}
+                      {categoryLabel(cat, t)}
                     </button>
                   );
                 })}
@@ -457,9 +467,9 @@ export function Homepage() {
                   type="button"
                   onClick={() => setCatsExpanded((v) => !v)}
                   className="chip shrink-0 gap-1 px-3"
-                  aria-label="展开全部分类"
+                  aria-label={t("home.expandCategoriesAria")}
                 >
-                  更多
+                  {t("home.more")}
                   <ChevronDown className={catsExpanded ? "h-4 w-4 rotate-180 transition" : "h-4 w-4 transition"} />
                 </button>
               </nav>
@@ -485,7 +495,7 @@ export function Homepage() {
                             isActive ? "chip-active" : ""
                           ].join(" ")}
                         >
-                          {cat}
+                          {categoryLabel(cat, t)}
                         </button>
                       );
                     })}
@@ -504,7 +514,7 @@ export function Homepage() {
         </div>
       ) : null}
 
-      {loading ? <p className="mt-6 text-sm text-gray-500">Loading...</p> : null}
+      {loading ? <p className="mt-6 text-sm text-gray-500">{t("home.loading")}</p> : null}
       {errorText ? <p className="mt-4 text-sm text-red-600">{errorText}</p> : null}
 
       {topTab === "wishlist" ? (
@@ -537,18 +547,18 @@ export function Homepage() {
                     <h3 className="mt-2 text-[15px] font-bold leading-snug text-slate-900">{post.title}</h3>
                     <p className="mt-2 text-sm leading-relaxed text-slate-600">{post.excerpt}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {post.tags.map((t) => (
+                      {post.tags.map((tag) => (
                         <span
-                          key={`${post.id}-${t}`}
+                          key={`${post.id}-${tag}`}
                           className="rounded-full bg-slate-100 px-2.5 py-0.5 text-[11px] font-medium text-slate-600"
                         >
-                          {t}
+                          {tag}
                         </span>
                       ))}
                     </div>
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3">
                       <p className="text-lg font-extrabold tabular-nums text-indigo-700">
-                        预算 ￥{Number(post.budget).toFixed(0)}
+                        {t("home.budget", { amount: Number(post.budget).toFixed(0) })}
                       </p>
                       <div className="flex items-center gap-4 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1">
@@ -567,14 +577,14 @@ export function Homepage() {
             ))
           ) : (
             <div className="rounded-3xl border border-white/30 bg-white/60 p-6 backdrop-blur-xl">
-              <p className="text-sm font-semibold text-slate-900">没有匹配的求购帖</p>
-              <p className="mt-1 text-xs text-gray-500">换个关键词试试，或去发布一条求购。</p>
+              <p className="text-sm font-semibold text-slate-900">{t("home.emptyWish")}</p>
+              <p className="mt-1 text-xs text-gray-500">{t("home.emptyWishHint")}</p>
               <button
                 type="button"
                 onClick={() => router.push("/publish")}
                 className="mt-4 inline-flex rounded-full bg-black px-4 py-2 text-xs font-semibold text-white"
               >
-                去发布
+                {t("home.goPublish")}
               </button>
             </div>
           )}
@@ -606,7 +616,7 @@ export function Homepage() {
                     <img src={img} alt={item.title} className="aspect-[4/3] h-full w-full rounded-3xl object-cover" />
                     {item.is_auction ? (
                       <span className="absolute left-3 top-3 rounded-full bg-rose-600/95 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                        拍卖
+                        {t("home.auctionBadge")}
                       </span>
                     ) : null}
                     <motion.button
@@ -624,7 +634,7 @@ export function Homepage() {
                         "absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full backdrop-blur",
                         liked ? "bg-black/80 text-white" : "bg-white/80 text-gray-700"
                       ].join(" ")}
-                      aria-label={liked ? "取消关注" : "关注"}
+                      aria-label={liked ? t("home.ariaUnfollow") : t("home.ariaFollow")}
                     >
                       <Heart className={liked ? "h-4 w-4 fill-current" : "h-4 w-4"} />
                     </motion.button>
@@ -636,8 +646,10 @@ export function Homepage() {
                       {item.is_auction ? (
                         <>
                           {item.auction_current_price != null
-                            ? `当前 ￥${Number(item.auction_current_price).toFixed(0)}`
-                            : `起拍 ￥${Number(item.auction_start_price ?? item.price).toFixed(0)}`}
+                            ? t("home.currentYuan", { p: Number(item.auction_current_price).toFixed(0) })
+                            : t("home.startYuan", {
+                                p: Number(item.auction_start_price ?? item.price).toFixed(0)
+                              })}
                         </>
                       ) : (
                         `$${Number(item.price).toFixed(2)}`
@@ -656,7 +668,7 @@ export function Homepage() {
             {visibleItems.map((item) => {
               const img = listingCardImageSrc(item, firstItemImageUrl(item.images_array));
               const liked = isFavorited(item.id);
-              const seller = gridCardSellerRow(item);
+              const seller = gridCardSellerRow(item, t);
               const likeBase = gridCardLikeHint(item.id);
               const likeShown = liked ? likeBase + 1 : likeBase;
 
@@ -683,7 +695,7 @@ export function Homepage() {
                     <img src={img} alt={item.title} className="aspect-[3/4] w-full object-cover" />
                     {item.is_auction ? (
                       <span className="absolute left-2 top-2 rounded-full bg-rose-600/95 px-2 py-0.5 text-[10px] font-bold text-white shadow-sm">
-                        拍
+                        {t("home.bidShort")}
                       </span>
                     ) : null}
                     <motion.button
@@ -701,7 +713,7 @@ export function Homepage() {
                         "absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full shadow-sm",
                         liked ? "bg-black/75 text-white" : "bg-white/90 text-gray-600"
                       ].join(" ")}
-                      aria-label={liked ? "取消喜欢" : "喜欢"}
+                      aria-label={liked ? t("home.ariaUnlike") : t("home.ariaLike")}
                     >
                       <Heart className={liked ? "h-3.5 w-3.5 fill-current" : "h-3.5 w-3.5"} />
                     </motion.button>
@@ -715,13 +727,17 @@ export function Homepage() {
                       {item.is_auction ? (
                         <>
                           {item.auction_current_price != null
-                            ? `当前 ￥${Number(item.auction_current_price).toFixed(0)}`
-                            : `起拍 ￥${Number(item.auction_start_price ?? item.price).toFixed(0)}`}
+                            ? t("home.currentYuan", { p: Number(item.auction_current_price).toFixed(0) })
+                            : t("home.startYuan", {
+                                p: Number(item.auction_start_price ?? item.price).toFixed(0)
+                              })}
                         </>
                       ) : (
                         <>￥{Number(item.price).toFixed(0)}</>
                       )}
-                      <span className="ml-1.5 font-normal text-slate-400">· {item.category}</span>
+                      <span className="ml-1.5 font-normal text-slate-400">
+                        · {categoryLabel(item.category, t)}
+                      </span>
                     </p>
                     <div className="mt-2 flex items-center justify-between gap-2">
                       <div className="flex min-w-0 flex-1 items-center gap-1.5">
@@ -741,7 +757,7 @@ export function Homepage() {
                           bumpCategoryPref(item.category, res.isFavorited ? 3 : -2);
                         }}
                         className="inline-flex shrink-0 items-center gap-0.5 text-slate-400"
-                        aria-label={liked ? "取消喜欢" : "喜欢"}
+                        aria-label={liked ? t("home.ariaUnlike") : t("home.ariaLike")}
                       >
                         <Heart
                           className={[
@@ -750,7 +766,7 @@ export function Homepage() {
                           ].join(" ")}
                         />
                         <span className="text-[11px] tabular-nums text-slate-500">
-                          {formatCompactCount(likeShown)}
+                          {formatCompactCount(likeShown, locale)}
                         </span>
                       </button>
                     </div>
@@ -764,9 +780,7 @@ export function Homepage() {
 
       {!loading && !errorText && topTab !== "wishlist" && visibleItems.length === 0 ? (
         <p className="mt-8 text-center text-sm text-gray-500">
-          {topTab === "auction"
-            ? "暂无拍卖中的商品。发布时勾选「以拍卖出售」即可。"
-            : "No items yet. Publish one!"}
+          {topTab === "auction" ? t("home.emptyAuction") : t("home.noItems")}
         </p>
       ) : null}
 

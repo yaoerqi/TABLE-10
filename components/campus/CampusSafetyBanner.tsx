@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { GraduationCap, Shield, X } from "lucide-react";
-import { campusTradeReminderBullets } from "@/lib/campus";
 import { isCampusSafetyStripHidden, setCampusSafetyStripHidden } from "@/lib/clientPrefs";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 export function CampusSafetyBanner() {
+  const { t } = useLocale();
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
@@ -23,10 +24,10 @@ export function CampusSafetyBanner() {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="text-[13px] font-bold leading-tight text-amber-950">校园交易的三个小默契</p>
+            <p className="text-[13px] font-bold leading-tight text-amber-950">{t("campus.safetyTitle")}</p>
             <button
               type="button"
-              aria-label="不再显示校内提示条"
+              aria-label={t("campus.safetyDismissAria")}
               onClick={() => {
                 setCampusSafetyStripHidden(true);
                 setDismissed(true);
@@ -37,19 +38,21 @@ export function CampusSafetyBanner() {
             </button>
           </div>
           <ul className="mt-2 space-y-1">
-            {campusTradeReminderBullets.slice(0, 2).map((b) => (
-              <li key={b.title} className="text-[11px] leading-snug text-amber-950/85">
-                <span className="font-semibold text-amber-900">{b.title}：</span>
-                {b.body}
-              </li>
-            ))}
+            <li className="text-[11px] leading-snug text-amber-950/85">
+              <span className="font-semibold text-amber-900">{t("campus.safetyBullet1Title")}：</span>
+              {t("campus.safetyBullet1Body")}
+            </li>
+            <li className="text-[11px] leading-snug text-amber-950/85">
+              <span className="font-semibold text-amber-900">{t("campus.safetyBullet2Title")}：</span>
+              {t("campus.safetyBullet2Body")}
+            </li>
           </ul>
           <Link
             href="/campus"
             className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-900 underline underline-offset-2 hover:text-amber-950"
           >
             <GraduationCap className="h-3 w-3" />
-            打开「校内交易指南」（课表空隙面交时段、避雷清单）
+            {t("campus.safetyLink")}
           </Link>
         </div>
       </div>

@@ -8,8 +8,10 @@ import { LoginScreen } from "@/components/auth/LoginScreen";
 import { supabase, hasSupabaseEnv } from "@/lib/supabase/client";
 import type { DbItem } from "@/lib/supabase/types";
 import { getFavorites, toggleFavorite } from "@/lib/clientPrefs";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 export function FollowingPage() {
+  const { t } = useLocale();
   const router = useRouter();
   const [items, setItems] = useState<DbItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +26,7 @@ export function FollowingPage() {
 
     if (!hasSupabaseEnv) {
       setLoading(false);
-      setErrorText("未配置 Supabase 环境变量");
+      setErrorText(t("common.supabaseNotConfigured"));
       return;
     }
 
@@ -81,7 +83,7 @@ export function FollowingPage() {
   if (!authChecked) {
     return (
       <main className="min-h-screen bg-white px-4 py-16">
-        <p className="text-center text-sm text-gray-500">Loading...</p>
+        <p className="text-center text-sm text-gray-500">{t("common.loading")}</p>
       </main>
     );
   }
@@ -103,24 +105,22 @@ export function FollowingPage() {
     <main className="mx-auto min-h-screen max-w-7xl px-4 pb-28 pt-6 sm:px-6 lg:px-8">
       <header className="sticky top-4 z-30 rounded-3xl">
         <div className="flex items-center justify-between rounded-full bg-white/80 px-4 py-3 backdrop-blur-md shadow-[0_10px_30px_-20px_rgba(0,0,0,0.15)]">
-          <h1 className="text-sm font-semibold text-gray-900">关注</h1>
+          <h1 className="text-sm font-semibold text-gray-900">{t("following.title")}</h1>
           <button
             type="button"
             onClick={() => router.push("/")}
             className="text-xs text-gray-500 hover:text-gray-700"
           >
-            返回推荐
+            {t("following.backRecommend")}
           </button>
         </div>
       </header>
 
-      {loading ? <p className="mt-6 text-sm text-gray-500">Loading...</p> : null}
+      {loading ? <p className="mt-6 text-sm text-gray-500">{t("common.loading")}</p> : null}
       {errorText ? <p className="mt-4 text-sm text-red-600">{errorText}</p> : null}
 
       {!loading && !errorText && visible.length === 0 ? (
-        <p className="mt-10 text-center text-sm text-gray-500">
-          你还没有关注任何商品。去推荐页点一下爱心即可关注。
-        </p>
+        <p className="mt-10 text-center text-sm text-gray-500">{t("following.empty")}</p>
       ) : null}
 
       <section className="mt-6 columns-1 gap-4 sm:columns-2 lg:columns-3">
@@ -150,7 +150,7 @@ export function FollowingPage() {
                     "absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full backdrop-blur",
                     liked ? "bg-black/80 text-white" : "bg-white/80 text-gray-700"
                   ].join(" ")}
-                  aria-label={liked ? "取消关注" : "关注"}
+                  aria-label={liked ? t("following.unfollow") : t("following.follow")}
                 >
                   <Heart className={liked ? "h-4 w-4 fill-current" : "h-4 w-4"} />
                 </button>

@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 export default function RegisterPage() {
+  const { t } = useLocale();
   const router = useRouter();
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
@@ -30,14 +32,14 @@ export default function RegisterPage() {
       });
       const json = (await resp.json().catch(() => ({}))) as { error?: string };
       if (!resp.ok) {
-        setMessage(`注册失败：${json?.error ? String(json.error) : resp.statusText}`);
+        setMessage(`${t("register.failPrefix")} ${json?.error ? String(json.error) : resp.statusText}`);
         return;
       }
 
-      setMessage("注册成功，已自动登录。");
+      setMessage(t("register.success"));
       setTimeout(() => router.push("/"), 350);
     } catch {
-      setMessage("注册失败（网络/配置问题）。");
+      setMessage(t("register.failNetwork"));
     } finally {
       setLoading(false);
     }
@@ -51,12 +53,8 @@ export default function RegisterPage() {
       </div>
 
       <section className="relative mx-auto flex min-h-screen max-w-md flex-col items-center justify-center px-6 py-10">
-        <h1 className="text-center text-3xl font-extrabold tracking-tight text-gray-900">
-          创建账号
-        </h1>
-        <p className="mt-3 text-center text-sm text-gray-500">
-          用账号密码注册（不走邮件验证码）
-        </p>
+        <h1 className="text-center text-3xl font-extrabold tracking-tight text-gray-900">{t("register.title")}</h1>
+        <p className="mt-3 text-center text-sm text-gray-500">{t("register.subtitle")}</p>
 
         <div className="mt-8 w-full rounded-3xl border border-white/30 bg-white/50 p-5 backdrop-blur-xl shadow-[0_20px_60px_-40px_rgba(0,0,0,0.28)]">
           <input
@@ -64,7 +62,7 @@ export default function RegisterPage() {
             onChange={(e) => setAccount(e.target.value)}
             inputMode="text"
             autoComplete="username"
-            placeholder="账号（例如 zhangsan）"
+            placeholder={t("register.accountPlaceholder")}
             className="input-pill"
           />
 
@@ -74,7 +72,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
-              placeholder="密码（至少 6 位）"
+              placeholder={t("register.passwordPlaceholder")}
               className="input-pill"
             />
             <input
@@ -82,7 +80,7 @@ export default function RegisterPage() {
               value={password2}
               onChange={(e) => setPassword2(e.target.value)}
               autoComplete="new-password"
-              placeholder="再输入一次密码"
+              placeholder={t("register.passwordAgainPlaceholder")}
               className="input-pill"
             />
           </div>
@@ -93,14 +91,14 @@ export default function RegisterPage() {
             disabled={loading || !canSubmit}
             className="btn-primary mt-5 w-full"
           >
-            {loading ? "注册中..." : "注册"}
+            {loading ? t("register.signingUp") : t("register.signUp")}
           </button>
 
           <Link
             href="/"
             className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
           >
-            返回登录
+            {t("register.backLogin")}
           </Link>
 
           {message ? <p className="mt-3 text-xs text-gray-600">{message}</p> : null}
@@ -109,4 +107,3 @@ export default function RegisterPage() {
     </main>
   );
 }
-

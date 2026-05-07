@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MessageCircle, Mic, Send } from "lucide-react";
 import { Live2DDisplay } from "@/components/live2d/Live2DDisplay";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 type SearchResult = {
   score: number;
@@ -18,6 +19,7 @@ type SearchResult = {
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
 export function WebPet() {
+  const { locale } = useLocale();
   const router = useRouter();
   const [open, setOpen] = useState(true); // default enabled
   const [petHidden, setPetHidden] = useState<"none" | "left" | "right">("none");
@@ -89,7 +91,7 @@ export function WebPet() {
       const resp = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: trimmed })
+        body: JSON.stringify({ query: trimmed, locale })
       });
       const json = await resp.json().catch(() => ({}));
       if (!resp.ok || !json?.ok) {

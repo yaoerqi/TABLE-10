@@ -1,5 +1,6 @@
 import type { MockItem } from "@/lib/mock/items";
 import type { Category } from "@/lib/categories";
+import { demoListingSearchHaystack } from "@/lib/i18n/demoListing";
 
 export type AssistantNeed = {
   keywords: string[];
@@ -53,7 +54,7 @@ export function parseNeed(input: string): AssistantNeed {
 
 export function scoreItem(item: MockItem, need: AssistantNeed): number {
   let score = 0;
-  const title = item.title.toLowerCase();
+  const title = demoListingSearchHaystack(item.id);
 
   if (need.category) {
     if (need.category === item.category) score += 20;

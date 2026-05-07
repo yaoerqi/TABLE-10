@@ -27,13 +27,15 @@ Open `http://localhost:3000`.
 ## Features (current)
 
 - Login / register (username + password), HTTP-only session cookie
-- Homepage: search, category chips, campus pickup filters, masonry / feed layouts, top tabs (推荐 / 发现 / 求购 / 拍卖)
+- **UI language**: English by default; switch to **中文** in **Settings** (`/settings`). Locale is stored in `localStorage` (`ent-locale`) and updates `document.documentElement.lang`. Root layout wraps the app with **`LocaleProvider`** (see `components/providers/`).
+- Homepage: search, localized category labels, campus pickup filters, masonry / feed layouts, top tabs (recommend / discover / wishlist / auction — copy follows locale)
+- **Seed demo listings** (`seed-{id}` rows merged into the feed): titles and meetup lines come from **`lib/i18n/demoListing.ts`** (EN + ZH); numeric/category data stays in **`lib/mock/items.ts`**
 - Listing detail, seller profile, publish with image upload + optional **cover** selection and optional **Meshy** Image→3D
 - **Auction** listings and auction detail page
 - **Wishlist** forum–style posts and per-post pages
 - **Direct messages**: thread per buyer/seller/item (`/chat/[id]`, demo chat route)
 - Virtual assistant page (`/assistant`) with search integration
-- Desktop pet can call `POST /api/search` (same host)
+- **Desktop pet** (`components/pet/WebPet.tsx`) runs on every page and calls `POST /api/search`; it must stay **inside** `AppProviders` in `app/layout.tsx` so hooks like `useLocale()` work
 
 ## Tech Stack
 
@@ -73,10 +75,14 @@ components/
   publish/PublishItemForm.tsx
   viewer/Item3DViewer.tsx
 lib/
+  i18n/                     # Locale messages, demo listing strings, format helpers
   server/session.ts         # Cookie sessions
   server/supabaseAdmin.ts   # Service-role client
   itemImages.ts             # First image helper for covers
   validation/publish-item.ts
+components/providers/
+  LocaleProvider.tsx        # Locale context + useLocale()
+  AppProviders.tsx          # Wraps children with LocaleProvider
 supabase/
   schema.sql                # Base schema (run first)
   migrations/*.sql          # accounts/sessions, auctions, 3D columns, …
@@ -164,7 +170,15 @@ Run migrations so your DB matches the app code.
 
 ## Search API
 
-- **`POST /api/search`** — natural-language style query; returns ranked items (implementation may combine mocks + DB depending on configuration).
+- **`POST /api/search`** — JSON body: `{ "query": string, "locale"?: "en" | "zh" }` (locale defaults to `en`). Returns ranked **mock** items with `title` and `meetupLocation` strings **localized** to the requested locale. Scoring matches against **both** English and Chinese demo strings so queries in either language still rank results.
+
+Example:
+
+```bash
+curl -s -X POST http://localhost:3000/api/search \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"二手 笔记本\",\"locale\":\"zh\"}"
+```
 
 ## Virtual Assistant + Desktop Pet
 
@@ -201,9 +215,12 @@ Schema includes `chat_threads` / `chat_messages`. The app exposes APIs to open a
    Add model assets under `public/models` as documented above.
 
 5. **Desktop pet search fails**  
-   Next.js must be running; pet should target `/api/search`.
+   Next.js must be running; pet should target `/api/search`. Send `{ "query": "...", "locale": "en" | "zh" }` if you want localized titles in the response.
 
-6. **Secrets**  
+6. **`useLocale must be used within LocaleProvider`**  
+   Any component that calls `useLocale()` must render under `<AppProviders>` / `<LocaleProvider>`. The desktop pet is rendered inside `AppProviders` in `app/layout.tsx` so it shares the same locale as the rest of the app.
+
+7. **Secrets**  
    Never expose `SUPABASE_SERVICE_ROLE_KEY` or Meshy keys to the browser; keep them server-side only.
 
 ## Deployment
@@ -216,6 +233,22 @@ Schema includes `chat_threads` / `chat_messages`. The app exposes APIs to open a
 MIT
 
 ## Changelog
+
+### 2026-05-07
+
+#### feat / i18n
+
+- App-wide UI strings via `lib/i18n/messages.ts` + `LocaleProvider`; settings language toggle (EN / 中文).  
+- Seed demo listing titles and meetup lines: `lib/i18n/demoListing.ts` with English defaults and Chinese variants; homepage and seed item detail resolve text by locale.  
+- `POST /api/search` accepts optional `locale`; natural-language scoring uses bilingual haystack for mock items.
+
+#### fix
+
+- Render `WebPet` inside `AppProviders` so `useLocale()` does not throw at runtime.
+
+#### docs
+
+- Update `README.md` for i18n, demo listings, search API, and LocaleProvider troubleshooting.
 
 ### 2026-05-06
 

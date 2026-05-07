@@ -2,31 +2,33 @@
 
 import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 const REQUEST_TIMEOUT_MS = 25_000;
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  timeoutMsg: string
+): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => {
-      reject(
-        new Error(
-          `${label}超过 ${Math.round(ms / 1000)}s 无响应，多为网络无法访问 Supabase 或环境变量配置错误。`
-        )
-      );
+    const timer = setTimeout(() => {
+      reject(new Error(timeoutMsg));
     }, ms);
     promise
       .then((v) => {
-        clearTimeout(t);
+        clearTimeout(timer);
         resolve(v);
       })
       .catch((e) => {
-        clearTimeout(t);
+        clearTimeout(timer);
         reject(e);
       });
   });
 }
 
 export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void> }) {
+  const { t } = useLocale();
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -51,21 +53,17 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void
           body: JSON.stringify({ username: account.trim(), password })
         }),
         REQUEST_TIMEOUT_MS,
-        "登录"
+        t("auth.timeoutExceeded", { seconds: Math.round(REQUEST_TIMEOUT_MS / 1000) })
       );
 
       const json = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!resp.ok || !json?.ok) {
-        setMessage(`登录失败：${json?.error ? String(json.error) : resp.statusText}`);
+        setMessage(`${t("auth.signInFailedPrefix")} ${json?.error ? String(json.error) : resp.statusText}`);
         return;
       }
       onAuthedRef.current?.();
     } catch (err) {
-      setMessage(
-        err instanceof Error
-          ? err.message
-          : "登录失败（网络/配置问题）。"
-      );
+      setMessage(err instanceof Error ? err.message : t("auth.signInNetwork"));
     } finally {
       setLoading(false);
     }
@@ -83,9 +81,7 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void
           Exclusive Campus Trading
         </h1>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
-          用账号密码登录（不走邮件验证码）
-        </p>
+        <p className="mt-4 text-center text-sm text-gray-500">{t("auth.subtitle")}</p>
 
         <form
           className="mt-8 w-full rounded-3xl border border-white/30 bg-white/50 p-5 backdrop-blur-xl shadow-[0_20px_60px_-40px_rgba(0,0,0,0.28)]"
@@ -103,7 +99,7 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void
             onChange={(e) => setAccount(e.target.value)}
             inputMode="text"
             autoComplete="username"
-            placeholder="账号（例如 zhangsan）"
+            placeholder={t("auth.accountPlaceholder")}
             className="input-pill"
           />
 
@@ -117,15 +113,13 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              placeholder="密码（至少 6 位）"
+              placeholder={t("auth.passwordPlaceholder")}
               className="input-pill"
             />
           </div>
 
           {!canSubmit && (account.trim().length > 0 || password.length > 0) ? (
-            <p className="mt-3 text-[11px] text-amber-700">
-              账号至少 3 个字符，密码至少 6 位；不满足时登录按钮为灰色不可用。
-            </p>
+            <p className="mt-3 text-[11px] text-amber-700">{t("auth.requirementsHint")}</p>
           ) : null}
 
           <button
@@ -133,14 +127,14 @@ export function LoginScreen({ onAuthed }: { onAuthed?: () => void | Promise<void
             disabled={loading || !canSubmit}
             className="btn-primary mt-5 w-full disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {loading ? "登录中..." : "登录"}
+            {loading ? t("auth.signingIn") : t("auth.signIn")}
           </button>
 
           <Link
             href="/register"
             className="mt-3 inline-flex w-full items-center justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-800 shadow-sm transition hover:bg-slate-50"
           >
-            去注册
+            {t("auth.goRegister")}
           </Link>
 
           {message ? <p className="mt-3 text-xs text-gray-600">{message}</p> : null}

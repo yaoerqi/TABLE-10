@@ -14,7 +14,9 @@ import {
 import { LoginScreen } from "@/components/auth/LoginScreen";
 import { Item3DViewer } from "@/components/viewer/Item3DViewer";
 import { ALL_CATEGORIES } from "@/lib/categories";
+import { categoryLabel } from "@/lib/i18n/categoryLabel";
 import { MIN_AUCTION_END_LEAD_MS } from "@/lib/auction";
+import { useLocale } from "@/components/providers/LocaleProvider";
 
 function defaultAuctionEndLocal(): string {
   const d = new Date(Date.now() + 26 * 60 * 60 * 1000);
@@ -32,6 +34,7 @@ function reorderWithCover<T>(items: T[], coverIdx: number): T[] {
 }
 
 export function PublishItemForm() {
+  const { t, locale } = useLocale();
   const router = useRouter();
   const [postType, setPostType] = useState<"item" | "wishlist">("item");
   const [isDragging, setIsDragging] = useState(false);
@@ -136,19 +139,19 @@ export function PublishItemForm() {
         const price = getValues("price");
         const loc = getValues("meetupLocation");
         const next = [
-          `【求购】${title || "（请补充需求标题）"}`,
-          `预算：￥${Number(price || 0).toFixed(0)}，校内自提优先。`,
-          `地点：${loc}`,
-          "补充说明：成色/型号/附件要求欢迎留言沟通。"
+          t("publish.wishTemplateTitle", { title: title || t("publish.wishTitleFallback") }),
+          t("publish.wishTemplateBudget", { n: Number(price || 0).toFixed(0) }),
+          t("publish.wishTemplateLoc", { loc }),
+          t("publish.wishTemplateNote")
         ].join("\n");
         setValue("description", next, { shouldValidate: true, shouldDirty: true });
       }
     }
-  }, [postType, getValues, setValue]);
+  }, [postType, getValues, setValue, t]);
 
   const triggerMeshyJob = useCallback(async (itemId: string, promptSource: string): Promise<boolean> => {
     setThreeDStatus("processing");
-    setThreeDMessage("正在向 Meshy 提交 3D 任务...");
+    setThreeDMessage(t("publish.meshySubmitting"));
     const resp = await fetch("/api/3d/generate", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -164,15 +167,15 @@ export function PublishItemForm() {
       const detail =
         json?.details !== undefined ? `（${JSON.stringify(json.details)}）` : "";
       setThreeDMessage(
-        `Meshy 任务创建失败：${json?.error ? String(json.error) : resp.statusText}${detail}`
+        `${t("publish.meshyFailPrefix")} ${json?.error ? String(json.error) : resp.statusText}${detail}`
       );
       return false;
     }
 
     setThreeDStatus("processing");
-    setThreeDMessage(`3D 任务已创建：${json.taskId ?? ""}`.trim());
+    setThreeDMessage(`${t("publish.meshyCreatedPrefix")} ${json.taskId ?? ""}`.trim());
     return true;
-  }, [threeDPrompt]);
+  }, [threeDPrompt, t]);
 
   const pull3dStatus = useCallback(async (): Promise<"stop" | "continue"> => {
     if (!createdItemId) return "stop";
@@ -181,11 +184,11 @@ export function PublishItemForm() {
     if (!resp.ok) {
       if (json?.code === "missing_3d_job_id") {
         setThreeDStatus(null);
-        setThreeDMessage("正在自动创建 Meshy 任务…");
+        setThreeDMessage(t("publish.meshyAutoCreate"));
         const ok = await triggerMeshyJob(createdItemId, getValues("title"));
         return ok ? "continue" : "stop";
       }
-      setThreeDMessage(json?.error ? String(json.error) : "刷新失败");
+      setThreeDMessage(json?.error ? String(json.error) : t("publish.refreshFail"));
       return "stop";
     }
     const status = (json.status ?? null) as
@@ -205,16 +208,16 @@ export function PublishItemForm() {
 
     if (status === "completed" && createdItemId) {
       setModelGlbUrl(`/api/items/${createdItemId}/model-glb`);
-      setThreeDMessage("3D 模型已完成，可预览。");
+      setThreeDMessage(t("publish.modelDone"));
       setThreeDProgress(100);
       return "stop";
     }
     if (status === "failed") {
-      setThreeDMessage("3D 生成失败，可尝试下方「重试创建 3D 任务」。");
+      setThreeDMessage(t("publish.modelFail"));
       return "stop";
     }
     return "continue";
-  }, [createdItemId, triggerMeshyJob, getValues]);
+  }, [createdItemId, triggerMeshyJob, getValues, t]);
 
   useEffect(() => {
     if (!poll3dActive || !createdItemId) return;
@@ -238,27 +241,27 @@ export function PublishItemForm() {
 
   const publishItem = async (data: PublishItemInput, mode: "wishlist" | "normal" | "3d") => {
     if (!hasSupabaseEnv) {
-      setSubmitMessage("请先配置 Supabase 环境变量。");
+      setSubmitMessage(t("publish.supabaseFirst"));
       return;
     }
     if (!authUserId) {
-      setSubmitMessage("请先登录后再发布。");
+      setSubmitMessage(t("publish.loginFirst"));
       return;
     }
     if (postType === "item" && files.length === 0) {
-      setSubmitMessage("请至少上传 1 张商品图片。");
+      setSubmitMessage(t("publish.imageRequired"));
       return;
     }
 
     if (postType === "item" && auctionEnabled) {
       const endMs = Date.parse(auctionEndLocal);
       if (!Number.isFinite(endMs) || endMs < Date.now() + MIN_AUCTION_END_LEAD_MS) {
-        setSubmitMessage("拍卖结束时间需至少比当前晚 1 小时。");
+        setSubmitMessage(t("publish.auctionEndTooSoon"));
         return;
       }
       const st = Number(auctionStep);
       if (!Number.isFinite(st) || st <= 0) {
-        setSubmitMessage("加价幅度必须大于 0。");
+        setSubmitMessage(t("publish.stepPositive"));
         return;
       }
     }
@@ -280,10 +283,10 @@ export function PublishItemForm() {
       }).catch(() => null);
       const json = (await resp?.json().catch(() => null)) as null | { ok?: boolean; error?: string };
       if (!resp || !resp.ok || !json?.ok) {
-        setSubmitMessage(`发布求购失败：${json?.error ? String(json.error) : resp?.statusText || "Network error"}`);
+        setSubmitMessage(`${t("publish.wishFailPrefix")} ${json?.error ? String(json.error) : resp?.statusText || "Network error"}`);
         return;
       }
-      setSubmitMessage("求购发布成功！");
+      setSubmitMessage(t("publish.wishOk"));
       setFiles([]);
       setThreeDPrompt("");
       return;
@@ -296,7 +299,7 @@ export function PublishItemForm() {
       const resp = await fetch("/api/upload/item-image", { method: "POST", body: fd }).catch(() => null);
       const json = (await resp?.json().catch(() => null)) as null | { ok?: boolean; url?: string; error?: string };
       if (!resp || !resp.ok || !json?.ok || !json.url) {
-        setSubmitMessage(`图片上传失败：${json?.error ? String(json.error) : resp?.statusText || "Network error"}`);
+        setSubmitMessage(`${t("publish.uploadFailPrefix")} ${json?.error ? String(json.error) : resp?.statusText || "Network error"}`);
         return;
       }
       uploadedUrls.push(String(json.url));
@@ -329,18 +332,18 @@ export function PublishItemForm() {
       | null
       | { ok?: boolean; itemId?: string; error?: string };
     if (!createResp || !createResp.ok || !createJson?.ok) {
-      setSubmitMessage(`发布失败：${createJson?.error ? String(createJson.error) : createResp?.statusText || "Network error"}`);
+      setSubmitMessage(`${t("publish.createFailPrefix")} ${createJson?.error ? String(createJson.error) : createResp?.statusText || "Network error"}`);
       return;
     }
     const itemId = createJson?.itemId as string | undefined;
     if (!itemId) {
-      setSubmitMessage("发布成功，但未获取到 itemId。");
+      setSubmitMessage(t("publish.noItemId"));
       setFiles([]);
       return;
     }
 
     setCreatedItemId(itemId);
-    setSubmitMessage("发布成功！");
+    setSubmitMessage(t("publish.publishOk"));
     setFiles([]);
 
     if (use3d) {
@@ -356,7 +359,7 @@ export function PublishItemForm() {
     const meetupLocation = getValues("meetupLocation");
     const price = getValues("price");
     if (!title) {
-      setSubmitMessage("请先填写标题，再用 AI 优化文案。");
+      setSubmitMessage(t("publish.fillTitleFirst"));
       return;
     }
     setSubmitMessage("");
@@ -365,22 +368,22 @@ export function PublishItemForm() {
       const resp = await fetch("/api/search", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: title })
+        body: JSON.stringify({ query: title, locale })
       });
       const json = await resp.json().catch(() => ({}));
       const hint =
         resp.ok && json?.ok && Array.isArray(json?.results) && json.results.length
-          ? `参考热度：同类热门 ${String(json.results[0]?.title ?? "").slice(0, 40)}`
+          ? t("publish.aiHintHot", { title: String(json.results[0]?.title ?? "").slice(0, 40) })
           : "";
 
       const next = [
-        `【${postType === "wishlist" ? "求购" : "闲置转让"}】${title}`,
+        `【${postType === "wishlist" ? t("publish.aiTagWish") : t("publish.aiTagItem")}】${title}`,
         postType === "wishlist"
-          ? `预算：￥${Number(price || 0).toFixed(0)}，最好校内自提，急的话可当面看货/验机。`
-          : `价格：￥${Number(price || 0).toFixed(0)}，同学爽快可小刀。`,
-        `分类：${category}｜交易地点：${meetupLocation}`,
-        "亮点：",
-        "- 走闲鱼同款“信息清晰”写法：成色/附件/瑕疵/使用时长都欢迎留言问我",
+          ? t("publish.aiLineWish", { n: Number(price || 0).toFixed(0) })
+          : t("publish.aiLineItem", { n: Number(price || 0).toFixed(0) }),
+        t("publish.aiLineMeta", { cat: category, loc: meetupLocation }),
+        t("publish.aiBullet"),
+        t("publish.aiBulletDetail"),
         hint ? `- ${hint}` : ""
       ]
         .filter(Boolean)
@@ -388,7 +391,7 @@ export function PublishItemForm() {
 
       setValue("description", next, { shouldValidate: true, shouldDirty: true });
     } catch (e: any) {
-      setSubmitMessage(e?.message ?? "AI 优化失败");
+      setSubmitMessage(e?.message ?? t("publish.aiOptimizeFail"));
     } finally {
       setOptimizing(false);
     }
@@ -401,7 +404,7 @@ export function PublishItemForm() {
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-card sm:p-7">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h1 className="text-xl font-bold text-slate-900">
-            {postType === "wishlist" ? "发布求购" : "发布宝贝"}
+            {postType === "wishlist" ? t("publish.titleWish") : t("publish.titleItem")}
           </h1>
           <div className="inline-flex shrink-0 rounded-full bg-gray-100 p-1 text-xs">
             <button
@@ -409,21 +412,19 @@ export function PublishItemForm() {
               onClick={() => setPostType("item")}
               className={["rounded-full px-3 py-1.5 font-semibold", postType === "item" ? "bg-black text-white" : "text-gray-700"].join(" ")}
             >
-              出售宝贝
+              {t("publish.sellTab")}
             </button>
             <button
               type="button"
               onClick={() => setPostType("wishlist")}
               className={["rounded-full px-3 py-1.5 font-semibold", postType === "wishlist" ? "bg-black text-white" : "text-gray-700"].join(" ")}
             >
-              求购需求
+              {t("publish.wishTab")}
             </button>
           </div>
         </div>
         <p className="mt-1 text-sm text-slate-500">
-          {postType === "wishlist"
-            ? "把你的需求说清楚，同学们会来留言联系你。"
-            : "Create a clean listing so students can find your item quickly."}
+          {postType === "wishlist" ? t("publish.subtitleWish") : t("publish.subtitleItem")}
         </p>
 
         <form
@@ -436,33 +437,33 @@ export function PublishItemForm() {
         >
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-700">
-              {postType === "wishlist" ? "需求标题" : "Title"}
+              {postType === "wishlist" ? t("publish.labelWishTitle") : t("publish.labelTitleItem")}
             </span>
             <input
               {...register("title")}
               className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none ring-indigo-200 focus:ring-2"
-              placeholder={postType === "wishlist" ? "例如：求购 二手 iPad 9 代 64G" : "e.g. Calculus Textbook 9th Edition"}
+              placeholder={postType === "wishlist" ? t("publish.phWishTitle") : t("publish.phItemTitle")}
             />
             {errors.title && <p className="mt-1 text-xs text-red-600">{errors.title.message}</p>}
           </label>
 
           <label className="block">
             <div className="mb-2 flex items-center justify-between">
-              <span className="block text-sm font-medium text-slate-700">Description</span>
+              <span className="block text-sm font-medium text-slate-700">{t("publish.labelDescription")}</span>
               <button
                 type="button"
                 onClick={optimizeCopy}
                 disabled={optimizing}
                 className="rounded-full bg-black px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
               >
-                {optimizing ? "优化中..." : "AI 优化文案"}
+                {optimizing ? t("publish.optimizing") : t("publish.aiOptimize")}
               </button>
             </div>
             <textarea
               {...register("description")}
               rows={4}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none ring-indigo-200 focus:ring-2"
-              placeholder="Condition, purchase time, included accessories..."
+              placeholder={t("publish.phDescription")}
             />
             {errors.description && (
               <p className="mt-1 text-xs text-red-600">{errors.description.message}</p>
@@ -472,7 +473,11 @@ export function PublishItemForm() {
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-slate-700">
-                {postType === "wishlist" ? "预算" : auctionEnabled ? "起拍价" : "Price"}
+                {postType === "wishlist"
+                  ? t("publish.labelBudget")
+                  : auctionEnabled
+                    ? t("publish.labelStartPrice")
+                    : t("publish.labelPrice")}
               </span>
               <input
                 type="number"
@@ -487,14 +492,14 @@ export function PublishItemForm() {
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-slate-700">Category</span>
+              <span className="mb-2 block text-sm font-medium text-slate-700">{t("publish.labelCategory")}</span>
               <select
                 {...register("category")}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none ring-indigo-200 focus:ring-2"
               >
                 {categoryOptions.map((category) => (
                   <option key={category} value={category}>
-                    {category}
+                    {categoryLabel(category, t)}
                   </option>
                 ))}
               </select>
@@ -510,12 +515,12 @@ export function PublishItemForm() {
                   onChange={(e) => setAuctionEnabled(e.target.checked)}
                   className="mt-0.5 h-4 w-4 rounded border-slate-300"
                 />
-                <span>以拍卖出售（上方价格为起拍价，需填写结束时间与加价幅度）</span>
+                <span>{t("publish.auctionCheckbox")}</span>
               </label>
               {auctionEnabled ? (
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-slate-600">拍卖结束时间</span>
+                    <span className="mb-1 block text-xs font-medium text-slate-600">{t("publish.auctionEnd")}</span>
                     <input
                       type="datetime-local"
                       value={auctionEndLocal}
@@ -524,7 +529,7 @@ export function PublishItemForm() {
                     />
                   </label>
                   <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-slate-600">每次最少加价（元）</span>
+                    <span className="mb-1 block text-xs font-medium text-slate-600">{t("publish.minBidStep")}</span>
                     <input
                       type="number"
                       min="0.01"
@@ -540,10 +545,8 @@ export function PublishItemForm() {
           ) : null}
 
           <label className="block">
-            <span className="mb-2 block text-sm font-medium text-slate-700">校门面交点</span>
-            <p className="mb-2 text-[11px] text-slate-500">
-              选常用热点更利于同学在首页「面交半径」里筛到你；也可在下拉里选英文旧版占位。
-            </p>
+            <span className="mb-2 block text-sm font-medium text-slate-700">{t("publish.meetupTitle")}</span>
+            <p className="mb-2 text-[11px] text-slate-500">{t("publish.meetupHint")}</p>
             <div className="mb-2 flex flex-wrap gap-1.5">
               {campusMeetupQuickPicks.map((preset) => (
                 <button
@@ -583,10 +586,8 @@ export function PublishItemForm() {
                   onSelectFiles(event.dataTransfer.files);
                 }}
               >
-                <p className="text-sm font-medium text-slate-700">Drag and drop photos here</p>
-                <p className="mt-1 text-xs text-slate-500">
-                  最多 6 张，提交后会上传到 Supabase Storage `item-images` 桶
-                </p>
+                <p className="text-sm font-medium text-slate-700">{t("publish.dragPhotos")}</p>
+                <p className="mt-1 text-xs text-slate-500">{t("publish.photoLimit")}</p>
                 <input
                   type="file"
                   accept="image/*"
@@ -598,7 +599,7 @@ export function PublishItemForm() {
                   type="button"
                   className="mt-3 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700"
                 >
-                  已选择 {files.length} 张
+                  {t("publish.selectedCount", { n: files.length })}
                 </button>
               </div>
               {previewUrls.length > 0 ? (
@@ -615,10 +616,8 @@ export function PublishItemForm() {
               ) : null}
               {previewUrls.length > 0 ? (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">封面图</span>
-                  <p className="mb-3 text-[11px] text-slate-500">
-                    选一张作为列表与详情页顶部展示图；也会作为 3D 生成所用的参考图（排在第一张）。
-                  </p>
+                  <span className="mb-1 block text-sm font-medium text-slate-700">{t("publish.coverTitle")}</span>
+                  <p className="mb-3 text-[11px] text-slate-500">{t("publish.coverHint")}</p>
                   <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
                     {previewUrls.map((url, idx) => (
                       <button
@@ -634,12 +633,12 @@ export function PublishItemForm() {
                       >
                         <img
                           src={url}
-                          alt={`封面候选 ${idx + 1}`}
+                          alt={t("publish.coverAlt", { n: idx + 1 })}
                           className="aspect-square w-full object-cover"
                         />
                         {coverImageIndex === idx ? (
                           <span className="absolute bottom-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                            封面
+                            {t("publish.coverBadge")}
                           </span>
                         ) : null}
                       </button>
@@ -650,23 +649,19 @@ export function PublishItemForm() {
             </>
           ) : (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-900">求购提示</p>
-              <p className="mt-1 text-xs text-slate-600">
-                求购需求通常不需要上传图片。发布后同学们会在“留言问答”里联系你。
-              </p>
+              <p className="text-sm font-semibold text-slate-900">{t("publish.wishTipsTitle")}</p>
+              <p className="mt-1 text-xs text-slate-600">{t("publish.wishTipsBody")}</p>
             </div>
           )}
 
           {postType === "item" ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <span className="mb-2 block text-sm font-medium text-slate-700">3D 生成（可选）</span>
-              <p className="mb-3 text-xs text-slate-500">
-                点击下方「3D 发布」时使用封面图排队生成模型；选「普通发布」则只上架图文，不触发 Meshy。
-              </p>
+              <span className="mb-2 block text-sm font-medium text-slate-700">{t("publish.optional3dTitle")}</span>
+              <p className="mb-3 text-xs text-slate-500">{t("publish.optional3dHint")}</p>
               <input
                 value={threeDPrompt}
                 onChange={(e) => setThreeDPrompt(e.target.value)}
-                placeholder="可选：3D 补充提示词（例如：一双白色运动鞋，干净背景）"
+                placeholder={t("publish.optional3dPh")}
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none ring-indigo-200 focus:ring-2"
               />
             </div>
@@ -678,7 +673,7 @@ export function PublishItemForm() {
               disabled={isSubmitting}
               className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Publishing..." : "发布求购"}
+              {isSubmitting ? t("publish.publishing") : t("publish.submitWish")}
             </button>
           ) : (
             <div className="space-y-2">
@@ -689,7 +684,7 @@ export function PublishItemForm() {
                   onClick={handleSubmit((d) => publishItem(d, "normal"))}
                   className="h-11 w-full rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSubmitting ? "发布中…" : "普通发布"}
+                  {isSubmitting ? t("publish.publishing") : t("publish.publishNormal")}
                 </button>
                 <button
                   type="button"
@@ -697,23 +692,21 @@ export function PublishItemForm() {
                   onClick={handleSubmit((d) => publishItem(d, "3d"))}
                   className="h-11 w-full rounded-xl bg-indigo-600 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isSubmitting ? "发布中…" : "3D 发布"}
+                  {isSubmitting ? t("publish.publishing") : t("publish.publish3d")}
                 </button>
               </div>
-              <p className="text-center text-[11px] text-slate-500">
-                普通发布更快；3D 发布会自动生成预览（通常几分钟，下方可看进度）。
-              </p>
+              <p className="text-center text-[11px] text-slate-500">{t("publish.publish3dHint")}</p>
             </div>
           )}
           {submitMessage ? <p className="text-sm text-slate-600">{submitMessage}</p> : null}
 
           {postType === "item" && createdItemId ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-900">3D Pipeline</p>
+              <p className="text-sm font-semibold text-slate-900">{t("publish.pipelineTitle")}</p>
               <p className="mt-1 text-xs text-slate-600">itemId: {createdItemId}</p>
               <p className="mt-1 text-xs text-slate-600">
-                status: {threeDStatus ?? "—"}
-                {poll3dActive ? " · 自动刷新中" : ""}
+                {t("publish.statusLabel")} {threeDStatus ?? "—"}
+                {poll3dActive ? t("publish.autoRefresh") : ""}
               </p>
               {poll3dActive &&
               threeDStatus !== "completed" &&
@@ -732,7 +725,7 @@ export function PublishItemForm() {
                   </div>
                   <p className="text-[11px] leading-relaxed text-slate-500">
                     {threeDProgress != null ? `${threeDProgress}% · ` : ""}
-                    Meshy 正在生成 3D，请稍候（通常几分钟）。进度来自服务商接口，部分阶段可能无百分比。
+                    {t("publish.meshyWait")}
                   </p>
                 </div>
               ) : null}
@@ -748,7 +741,7 @@ export function PublishItemForm() {
                 }}
                 className="mt-3 h-10 w-full rounded-xl bg-slate-900 text-sm font-semibold text-white hover:bg-slate-800"
               >
-                开始创建 3D 任务
+                {t("publish.startMeshy")}
               </button>
               {threeDMessage ? <p className="mt-2 text-xs text-slate-600">{threeDMessage}</p> : null}
             </div>
@@ -762,13 +755,13 @@ export function PublishItemForm() {
           ) : null}
 
           {(postType === "item" && createdItemId) ||
-          (postType === "wishlist" && submitMessage.includes("成功")) ? (
+          (postType === "wishlist" && submitMessage === t("publish.wishOk")) ? (
             <button
               type="button"
               onClick={() => router.push("/")}
               className="mt-8 h-12 w-full rounded-xl border border-slate-200 bg-white text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
             >
-              完成
+              {t("publish.done")}
             </button>
           ) : null}
         </form>

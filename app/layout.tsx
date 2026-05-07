@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
+import { AppProviders } from "@/components/providers/AppProviders";
 import { WebPet } from "@/components/pet/WebPet";
 
 export const metadata: Metadata = {
@@ -19,8 +20,10 @@ export default function RootLayout({
           src="/vendor/live2dcubismcore.js"
           strategy="beforeInteractive"
         />
-        {children}
-        <WebPet />
+        <AppProviders>
+          {children}
+          <WebPet />
+        </AppProviders>
       </body>
     </html>
   );

@@ -4,7 +4,15 @@ import { firstItemImageUrl } from "@/lib/itemImages";
 
 export const runtime = "nodejs";
 
+/** Never cache this handler as “static”; covers must not reuse expired redirect targets. */
+export const dynamic = "force-dynamic";
+
 const BUCKET = "item-images";
+
+const IMAGE_HEADERS = {
+  /** Short CDN/browser cache of bytes; URL stays stable so no expired signed links in img.src */
+  "Cache-Control": "private, max-age=120, must-revalidate"
+} as const;
 
 /** Turn `/storage/...` paths into absolute URLs using the project origin (matches browser uploads). */
 function normalizeStoredImageUrl(raw: string): string {
@@ -51,8 +59,8 @@ function extractItemImagesObjectPath(absoluteUrl: string): string | null {
 }
 
 /**
- * Redirect to a short-lived signed URL so listing cards can show covers from a private bucket.
- * Public /object/public/... URLs often return 400/403 for private buckets — fallback to streaming download.
+ * Serve listing cover bytes through this URL so `<img src="/api/items/.../card-image">` stays stable.
+ * Avoid 302 → Supabase signed URL as the primary path: signed URLs expire (~1h) and cached redirects break images later.
  */
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
@@ -74,22 +82,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const normalized = normalizeStoredImageUrl(raw);
 
-    // Already a temporary signed URL — pass through.
-    if (normalized.includes("/sign/") && normalized.includes(BUCKET)) {
-      return NextResponse.redirect(normalized, 302);
-    }
-
     const objectPath = extractItemImagesObjectPath(normalized);
 
     if (objectPath) {
-      const { data: signed, error: signErr } = await admin.storage
-        .from(BUCKET)
-        .createSignedUrl(objectPath, 60 * 60);
-
-      if (!signErr && signed?.signedUrl) {
-        return NextResponse.redirect(signed.signedUrl, 302);
-      }
-
       const { data: blob, error: dlErr } = await admin.storage.from(BUCKET).download(objectPath);
       if (!dlErr && blob) {
         const buf = await blob.arrayBuffer();
@@ -97,13 +92,35 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         return new NextResponse(buf, {
           headers: {
             "Content-Type": ct,
-            "Cache-Control": "public, max-age=300, s-maxage=300"
+            ...IMAGE_HEADERS
+          }
+        });
+      }
+
+      // Last resort: signed URL (short-lived). Do not let caches treat redirect as long-lived.
+      const { data: signed, error: signErr } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(objectPath, 60 * 60);
+
+      if (!signErr && signed?.signedUrl) {
+        return NextResponse.redirect(signed.signedUrl, {
+          status: 302,
+          headers: {
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            Pragma: "no-cache"
           }
         });
       }
     }
 
-    return NextResponse.redirect(normalized, 302);
+    // External URL or legacy signed URL stored in DB — redirect but prevent sticky redirect cache.
+    return NextResponse.redirect(normalized, {
+      status: 302,
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        Pragma: "no-cache"
+      }
+    });
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : "Server error";
     return NextResponse.json({ error: msg }, { status: 500 });
