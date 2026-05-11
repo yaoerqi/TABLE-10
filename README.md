@@ -7,13 +7,13 @@ Campus-oriented second-hand marketplace for university students (similar to Xian
 
 ## Overview
 
-Mobile-first web app for browsing and publishing listings, with optional 3D preview (Meshy), auctions, wishlist-style posts, and DM threads tied to items. A separate assistant/search API can be used by an external desktop pet client.
+Mobile-first web app for browsing and publishing listings, with optional 3D preview (Meshy), auctions, wishlist-style posts, and DM threads tied to items. **`POST /api/search`** is aimed at the in-browser desktop pet and external clients; the **`/assistant`** page runs search **in the browser** against mock catalog data (see below).
 
 > **Auth**: The main feed and publish flows expect a logged-in account (`LoginScreen` → session cookie). Seed/demo cards still appear in the feed **after** login when merged with live DB rows.
 
 ## Screenshots
 
-> TODO: add screenshots / GIFs
+(Optional) Add screenshots or GIFs of the home feed, publish flow, and assistant — replace this section when you have assets.
 
 ## Quick start
 
@@ -28,14 +28,18 @@ Open `http://localhost:3000`.
 
 - Login / register (username + password), HTTP-only session cookie
 - **UI language**: English by default; switch to **中文** in **Settings** (`/settings`). Locale is stored in `localStorage` (`ent-locale`) and updates `document.documentElement.lang`. Root layout wraps the app with **`LocaleProvider`** (see `components/providers/`).
-- Homepage: search, localized category labels, campus pickup filters, masonry / feed layouts, top tabs (recommend / discover / wishlist / auction — copy follows locale)
+- Homepage: search, localized category labels, campus pickup filters, masonry / feed layouts, top tabs (recommend / discover / wishlist / auction — copy follows locale). Bottom nav uses **Recommend** / **Hot** (Hot maps to the discover feed).
+- **Following / favorites** (`/following`): listings you marked as favorites (stored client-side + loaded from Supabase when configured); linked from home and campus helper.
 - **Seed demo listings** (`seed-{id}` rows merged into the feed): titles and meetup lines come from **`lib/i18n/demoListing.ts`** (EN + ZH); numeric/category data stays in **`lib/mock/items.ts`**
 - Listing detail, seller profile, publish with image upload + optional **cover** selection and optional **Meshy** Image→3D
 - **Auction** listings and auction detail page
 - **Wishlist** forum–style posts and per-post pages
-- **Direct messages**: thread per buyer/seller/item (`/chat/[id]`, demo chat route)
-- Virtual assistant page (`/assistant`) with search integration
-- **Desktop pet** (`components/pet/WebPet.tsx`) runs on every page and calls `POST /api/search`; it must stay **inside** `AppProviders` in `app/layout.tsx` so hooks like `useLocale()` work
+- **Direct messages**: thread per buyer/seller/item (`/chat/[id]`); **`/chat/demo`** for demo navigation
+- **Virtual assistant page** (`/assistant`): Live2D + text/voice-style UI; search uses **`lib/assistant/search`** and **`lib/mock/items`** in the browser (does **not** call `POST /api/search`)
+- **Desktop pet** (`components/pet/WebPet.tsx`) on every page:
+  - **Search mode** → `POST /api/search`
+  - **Chat mode** → `POST /api/chat` (needs `DEEPSEEK_API_KEY` or `GEMINI_API_KEY`)
+  The pet must stay **inside** `AppProviders` in `app/layout.tsx` so hooks like `useLocale()` work
 
 ## Tech Stack
 
@@ -45,6 +49,7 @@ Open `http://localhost:3000`.
   - **Database**: PostgreSQL (`supabase/schema.sql` + migrations under `supabase/migrations/`)
   - **Storage**: `item-images` bucket (upload via `POST /api/upload/item-image`); listing cards use **`GET /api/items/[id]/card-image`** to redirect or stream images (works with **private** buckets when `SUPABASE_SERVICE_ROLE_KEY` is set)
   - **3D**: Meshy image→GLB pipeline (`/api/3d/generate`, `/api/3d/status`); GLB served via `/api/items/[id]/model-glb`
+  - **LLM (optional)**: `POST /api/chat` proxies to DeepSeek or Google Gemini for the desktop pet chat panel
 - **Desktop pet / avatar (optional)**: Electron, PIXI.js, pixi-live2d-display
 
 ## Folder Structure
@@ -55,27 +60,34 @@ app/
   publish/page.tsx          # Publish listing
   register/page.tsx         # Register
   profile/page.tsx          # Profile / listings
+  settings/page.tsx         # Settings (language, etc.)
+  following/page.tsx        # Favorite listings
   campus/page.tsx           # Campus helper UI
   item/[id]/page.tsx        # Listing detail
   auction/[id]/page.tsx     # Auction detail
   wish/[id]/page.tsx        # Wishlist post detail
   chat/[id]/page.tsx        # DM thread
-  assistant/page.tsx        # Virtual assistant
+  chat/demo/page.tsx        # Demo chat entry
+  assistant/page.tsx        # Virtual assistant (client-side mock search)
   api/
     auth/*                  # login, logout, register, me
-    items/*                 # CRUD, card-image, model-glb, bids, …
+    items/*                 # CRUD, card-image, model-glb, bid, auction, …
     upload/item-image       # Image upload
     3d/*                    # Meshy job create + poll
-    search/route.ts         # Natural-language search
+    search/route.ts         # Natural-language search (mock items; for pet / API clients)
+    chat/route.ts           # LLM chat (DeepSeek / Gemini)
+    wishlist/*              # Wishlist forum API
     dm/thread               # Open DM for an item
 components/
   auth/LoginScreen.tsx
   home/Homepage.tsx
   navigation/BottomNav.tsx
+  following/FollowingPage.tsx
   publish/PublishItemForm.tsx
   viewer/Item3DViewer.tsx
 lib/
   i18n/                     # Locale messages, demo listing strings, format helpers
+  assistant/search.ts       # Client-side NL search used by /assistant
   server/session.ts         # Cookie sessions
   server/supabaseAdmin.ts   # Service-role client
   itemImages.ts             # First image helper for covers
@@ -95,7 +107,7 @@ docs/
 
 - Node.js 18+
 - A Supabase project (Postgres + Storage)
-- Git (optional)
+- Git (recommended if you publish to GitHub)
 
 ## Setup
 
@@ -107,26 +119,37 @@ npm install
 
 ### 2) Environment variables
 
-Create `.env.local` (do **not** commit it).
+Create `.env.local` (do **not** commit it — it is listed in `.gitignore`).
+
+**Supabase (required for app DB + storage flows)**
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-or-publishable-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+```
+
+**LLM keys (optional)** — needed for **`POST /api/chat`** (desktop pet **chat** mode). If both are set, DeepSeek is preferred.
+
+```env
 DEEPSEEK_API_KEY=your-deepseek-api-key
 GEMINI_API_KEY=your-gemini-api-key
 ```
 
-**Required for server APIs** (publish, feed items, image proxy, 3D):
+Optional model overrides:
 
 ```env
-SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
+DEEPSEEK_MODEL=deepseek-chat
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
-**Optional**:
+**Other optional**
 
 ```env
 MESHY_API_KEY=your-meshy-api-key
 ```
+
+Without Supabase env vars, some screens show a “not configured” message; without LLM keys, **`/api/chat`** returns an error (search-only flows still work).
 
 ### 3) Create Supabase tables + RLS
 
@@ -155,7 +178,9 @@ Useful routes:
 - `http://localhost:3000/` — Home (after login)  
 - `http://localhost:3000/publish` — Publish  
 - `http://localhost:3000/register` — Register  
-- `http://localhost:3000/assistant` — Assistant  
+- `http://localhost:3000/settings` — Language and preferences  
+- `http://localhost:3000/following` — Saved favorites  
+- `http://localhost:3000/assistant` — Assistant + Live2D  
 
 ## Database Schema (summary)
 
@@ -180,10 +205,16 @@ curl -s -X POST http://localhost:3000/api/search \
   -d "{\"query\":\"二手 笔记本\",\"locale\":\"zh\"}"
 ```
 
+## Chat API
+
+- **`POST /api/chat`** — JSON body: `{ "messages": [{ "role": "user" | "assistant", "content": string }, ...] }` or `{ "prompt": string }`. Proxies to **DeepSeek** (`DEEPSEEK_API_KEY`) or **Gemini** (`GEMINI_API_KEY`) when configured. Used by the **desktop pet chat** UI in `WebPet`.
+
 ## Virtual Assistant + Desktop Pet
 
-- **`/assistant`** — browser UI for text / voice-style search.  
-- Desktop pet should call **`http://localhost:3000/api/search`** (same shape as in code).
+| Surface | Behavior |
+|--------|----------|
+| **`/assistant`** | Live2D + search UI; runs **`lib/assistant/search`** against **`lib/mock/items`** entirely in the browser — **no** `POST /api/search` call. |
+| **Desktop pet** (`WebPet`) | **Search** tab → `POST /api/search` (same JSON as above). **Chat** tab → `POST /api/chat`. External Electron pets can call the same URLs when Next.js is running. |
 
 ## Live2D Model Assets
 
@@ -215,24 +246,66 @@ Schema includes `chat_threads` / `chat_messages`. The app exposes APIs to open a
    Confirm `public/models/Haru/Haru.model3.json` exists and `/vendor/live2dcubismcore.js` loads (see root layout).
 
 5. **Desktop pet search fails**  
-   Next.js must be running; pet should target `/api/search`. Send `{ "query": "...", "locale": "en" | "zh" }` if you want localized titles in the response.
+   Next.js must be running; use **`POST /api/search`**. Send `{ "query": "...", "locale": "en" | "zh" }` for localized titles.
 
-6. **`useLocale must be used within LocaleProvider`**  
+6. **Desktop pet chat fails**  
+   Configure at least one of **`DEEPSEEK_API_KEY`** or **`GEMINI_API_KEY`**. The **`/api/chat`** route returns 500 if neither is set.
+
+7. **`useLocale must be used within LocaleProvider`**  
    Any component that calls `useLocale()` must render under `<AppProviders>` / `<LocaleProvider>`. The desktop pet is rendered inside `AppProviders` in `app/layout.tsx` so it shares the same locale as the rest of the app.
 
-7. **Secrets**  
-   Never expose `SUPABASE_SERVICE_ROLE_KEY` or Meshy keys to the browser; keep them server-side only.
+8. **Secrets**  
+   Never expose `SUPABASE_SERVICE_ROLE_KEY`, LLM keys, or Meshy keys to the browser; keep them server-side only.
 
 ## Deployment
 
 - **Vercel** (or similar): set all env vars in project settings; production should use `secure` cookies (`NODE_ENV=production`).  
 - **Supabase**: align RLS and Storage policies with your deployment.
 
+## Publishing to GitHub
+
+1. **Create an empty repository** on [GitHub](https://github.com/new) (no README/license if you already have them locally).
+
+2. **In your project folder**, ensure secrets are not tracked:
+
+   - `.env.local` should **not** appear in `git status` (this repo’s `.gitignore` already ignores `.env*`).
+
+3. **Initialize Git** (if this folder is not yet a repo):
+
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   ```
+
+4. **Add the remote** (replace `YOUR_USER` / `YOUR_REPO`):
+
+   ```bash
+   git remote add origin https://github.com/YOUR_USER/YOUR_REPO.git
+   ```
+
+5. **Push** (use `main` or `master` to match GitHub’s default):
+
+   ```bash
+   git branch -M main
+   git push -u origin main
+   ```
+
+If GitHub shows authentication errors, use **HTTPS + Personal Access Token** (Settings → Developer settings → Personal access tokens) or **SSH** (`git@github.com:YOUR_USER/YOUR_REPO.git`) after adding an SSH key to your GitHub account.
+
 ## License
 
 MIT
 
 ## Changelog
+
+### 2026-05-11
+
+#### docs
+
+- Expand `README.md`: `/following`, `/settings`, `/chat/demo`, folder tree and API routes (`chat`, wishlist, bid, auction).
+- Document `POST /api/chat`, optional `DEEPSEEK_MODEL` / `GEMINI_MODEL`, and split assistant (client mock search) vs pet (`/api/search` + `/api/chat`).
+- Add **Publishing to GitHub** steps.
 
 ### 2026-05-07
 
